@@ -21,6 +21,13 @@
       FOREIGN KEY (caisse_id) REFERENCES caisses(id) ON DELETE CASCADE,
       FOREIGN KEY (boutique_id) REFERENCES boutiques(id) ON DELETE CASCADE,
       FOREIGN KEY (mode_paiement_id) REFERENCES mode_paiements(id) ON DELETE CASCADE
-    )
- 
+    );
+    
+CREATE INDEX IF NOT EXISTS idx_reglements_client_id ON reglements(client_id);
+CREATE INDEX IF NOT EXISTS idx_reglements_fournisseur_id ON reglements(fournisseur_id);
+CREATE INDEX IF NOT EXISTS idx_reglements_document_id ON reglements(document_id);
+CREATE INDEX IF NOT EXISTS idx_reglements_caisse_id ON reglements(caisse_id);
+CREATE INDEX IF NOT EXISTS idx_reglements_boutique_id ON reglements(boutique_id);
+CREATE INDEX IF NOT EXISTS idx_reglements_mode_paiement_id ON reglements(mode_paiement_id);
+CREATE INDEX IF NOT EXISTS idx_reglements_user_id ON reglements(user_id);
  

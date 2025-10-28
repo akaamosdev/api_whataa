@@ -131,7 +131,9 @@ pub struct UserCreate {
     pub email: String,
     pub password: String,
 }
+
 pub async fn create_user(State(pool): State<SqlitePool>,Json(payload): Json<UserCreate>) {
     let id = Uuid::new_v4().to_string();
    // sqlx::query("")
 }
+

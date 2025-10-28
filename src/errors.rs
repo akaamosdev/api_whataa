@@ -11,6 +11,9 @@ pub enum AppError {
     #[error("Erreur interne: {0}")]
     Internal(String),
 
+    #[error("Requête invalide: {0}")]
+    BadRequest(String),
+
     #[error(transparent)]
     SqlxError(#[from] sqlx::Error),
     #[error("Erreur de hachage du mot de passe")]
@@ -40,6 +43,9 @@ impl IntoResponse for AppError {
             // L'erreur interne contient déjà le message, on le retourne directement.
             AppError::Internal(msg) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
+            }
+            AppError::BadRequest(msg) => {
+                (StatusCode::BAD_REQUEST, msg).into_response()
             }
             // Pour les erreurs de la base de données (SqlxError),
             // on utilise le message de l'erreur sous-jacente.

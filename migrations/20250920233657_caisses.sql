@@ -7,4 +7,5 @@
       statut INTEGER,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       synchronise INTEGER
-    )
+    );
+CREATE INDEX IF NOT EXISTS idx_caisses_boutique_id ON caisses(boutique_id);

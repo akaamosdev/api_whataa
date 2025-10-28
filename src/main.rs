@@ -3,12 +3,10 @@ mod db;
 mod errors;
 mod middleware;
 mod auth;
-mod models {
-pub mod user;
-}
-mod handlers {
-pub mod auth;
-}
+mod handlers;
+mod models;
+
+
 mod routes;
 
 
@@ -16,7 +14,7 @@ use crate::{config::Config, db::init_db, routes::create_router};
 use tracing_subscriber;
 use std::net::SocketAddr;
 
-
+#[allow(warnings)]
 #[tokio::main]
 async fn main() {
 tracing_subscriber::fmt::init();

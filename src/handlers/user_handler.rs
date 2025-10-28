@@ -1,9 +1,36 @@
 
-pub async fn get_all_users(State(pool): State<SqlitePool>) -> Result<Json<Vec<User>>, AppError> {
-    let users = sqlx::query_as::<_, User>("SELECT id, name, role_id, boutique_id, email, password_hash, created_at FROM users")
-        .fetch_all(&pool)
-        .await
-        .map_err(AppError::from)?;
+use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, Json};
+use serde::Serialize;
+use serde_json::json;
+use sqlx::{FromRow, SqlitePool};
 
-    Ok(Json(users))
+use crate::errors::AppError;
+
+pub async fn check_database(State(pool): State<SqlitePool>)-> Result<impl IntoResponse, AppError> {
+    
+    let count:i64 = sqlx::query_scalar("SELECT COUNT(id) FROM users")
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| AppError::SqlxError(e))?;
+
+    Ok((StatusCode::OK,Json(json!({
+        "statut":count<0,
+    }))))
+}
+#[derive(Serialize, FromRow)]
+pub struct TiersData{
+    pub id:String,
+    pub denomination:String,
+
+}
+pub async fn all_tiers(State(pool): State<SqlitePool>,Path(table):Path<String>) 
+-> Result<impl IntoResponse, AppError> {
+    let sqlc = format!("SELECT id, denomination FROM {} ORDER BY denomination ASC",table);
+    let familles: Vec<TiersData> =
+        sqlx::query_as(&sqlc)
+            .fetch_all(&pool)
+            .await
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    Ok((StatusCode::OK, Json(familles)))
 }

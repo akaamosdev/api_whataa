@@ -6,4 +6,5 @@ CREATE TABLE IF NOT EXISTS boutiques(
       name TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       synchronise INTEGER
-    )
+    );
+CREATE INDEX IF NOT EXISTS idx_boutiques_compagny_id ON boutiques(compagny_id);

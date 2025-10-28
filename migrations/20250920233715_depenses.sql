@@ -12,4 +12,8 @@ CREATE TABLE IF NOT EXISTS depenses(
       ref_piece TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       synchronise INTEGER
-    )
+    );
+CREATE INDEX IF NOT EXISTS idx_depenses_type_depense_id ON depenses(type_depense_id);
+CREATE INDEX IF NOT EXISTS idx_depenses_user_id ON depenses(user_id);
+CREATE INDEX IF NOT EXISTS idx_depenses_caisse_id ON depenses(caisse_id);
+CREATE INDEX IF NOT EXISTS idx_depenses_mode_paiement_id ON depenses(mode_paiement_id);

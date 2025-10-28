@@ -1,3 +1,6 @@
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
 
 
 #[derive(Debug,Serialize,Deserialize,FromRow)]
@@ -20,7 +23,6 @@ pub struct Compagny{
     pub address_mail: String,
     pub logo: String,
     pub sale_negative: String,
-    pub synchronise: bool,
-    pub create_at: String
+    pub synchronise: i8,
 }
 

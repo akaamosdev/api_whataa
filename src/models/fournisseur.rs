@@ -1,3 +1,6 @@
+use serde::{Deserialize, Serialize};
+use sqlx::FromRow;
+
 
 
 #[derive(Debug,Serialize,Deserialize,FromRow)]
@@ -14,8 +17,9 @@ pub struct Fournisseur{
     pub faxe: String,
     pub address_mail: String,
     pub boutique_id: String,
-    pub defaut: i64,
-    pub synchronise: bool,
-    pub create_at: String
+    pub synchronise: i8,
+    pub solde: Option<f64>
 }
+
+
 

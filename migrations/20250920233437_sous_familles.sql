@@ -6,4 +6,6 @@ CREATE TABLE IF NOT EXISTS sous_familles(
       famille_id TEXT,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       synchronise INTEGER
-    )
+    );
+
+CREATE INDEX IF NOT EXISTS idx_sous_familles_famille_id ON sous_familles(famille_id);

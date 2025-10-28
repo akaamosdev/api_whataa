@@ -12,4 +12,7 @@
       statut INTEGER,
       depot_id TEXT DEFAULT "",
       synchronise INTEGER
-    )
+    );
+
+CREATE INDEX IF NOT EXISTS idx_users_boutique_id ON users(boutique_id);
+CREATE INDEX IF NOT EXISTS idx_users_depot_id ON users(depot_id);

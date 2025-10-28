@@ -1,15 +1,74 @@
-use axum::{Router, routing::{post,get}};
+use crate::handlers::{
+    auth::{get_all_users, login, register}, client_handler::{client_add, client_paginates,client_update, store_solde_initial}, compagny_handler::create_compagny, document_handler::store_document, famille::{add_famille, delete_famille, get_familles, update_famille}, fournisseur_handler::{fournisseur_add, fournisseur_paginates, fournisseur_update}, helpers::{get_last_counts, import_articles, upload_file}, mode_paiement::get_mode_paiement, product_handler::{article_add, article_by_id, article_paginates, article_update}, sous_famille::{
+        sous_famille_add, sous_famille_delete, sous_famille_update, sous_familles_by_famille,
+        sous_familles_get,
+    }, user_handler::{all_tiers, check_database}, vente_handler::{vente_by_id, vente_get}
+};
+use tower_http::services::ServeDir;
+use axum::{
+    Router,
+    routing::{get, post},
+};
 use sqlx::SqlitePool;
-use crate::handlers::auth::{get_all_users, login, register};
 
 pub fn create_router(pool: SqlitePool) -> Router {
+    // Routes pour les familles
+    let famille_routes = Router::new().route(
+        "/",
+        post(add_famille).put(update_famille).delete(delete_famille),
+    );
+    let sous_famille_routes = Router::new().route(
+        "/",
+        get(sous_familles_get)
+            .post(sous_famille_add)
+            .put(sous_famille_update)
+            .delete(sous_famille_delete),
+    );
+    let article_routes = Router::new().route("/", get(article_paginates)
+        .post(article_add)
+        .put(article_update)
+        
+        );
+    let fournisseur_routes = Router::new().route("/",
+    get(fournisseur_paginates)
+                .post(fournisseur_add)
+                .put(fournisseur_update)
+            ) ;
+    let client_routes = Router::new().route("/",
+    get(client_paginates)
+                .post(client_add)
+                .put(client_update)
+            ) ;
+let vente_routes = Router::new().route("/",
+    get(vente_get)
+                .post(store_document)
+               
+                .put(client_update)
+            ) ;
+    // Router principal
     Router::new()
+        .route("/check_database", post(check_database))
+        .route("/store_compagny", post(create_compagny))
         .route("/auth/register", post(register))
         .route("/auth/login", post(login))
-       // .route("/users", get(get_all_users).post(handler))
-        // .nest("pv",
-        /* Router::new()
-            .route("/product", get(handler)) */
-        //)
+        .route("/all_tiers/{table}", get(all_tiers))
+        .route("/users", get(get_all_users))
+        .route("/last_count", post(get_last_counts))
+        .route("/params/{table}", get(get_familles))
+        .route("/mode_paiement", get(get_mode_paiement))
+        .route("/sous_famille/by/{famille}", get(sous_familles_by_famille))
+        .route("/article/{id}", get(article_by_id))
+        .route("/upload", post(upload_file))
+        .route("/import_articles", post(import_articles))
+        .route("/solde_initial", post(store_solde_initial))
+        .nest_service("/uploads", ServeDir::new("./uploads"))
+        .nest("/familles", famille_routes)
+        .nest("/sous_familles", sous_famille_routes)
+        .nest("/articles", article_routes)
+        .nest("/fournisseurs", fournisseur_routes)
+        .nest("/clients", client_routes)
+        .nest("/ventes", vente_routes)
+        //vente by id
+        .route("/vente/{doc_id}", get(vente_by_id))
         .with_state(pool)
 }
