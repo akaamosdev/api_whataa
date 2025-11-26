@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{prelude::FromRow, SqlitePool};
+use sqlx::{prelude::FromRow, PgPool};
 
 use crate::errors::AppError;
 
@@ -28,7 +28,7 @@ pub struct FamilleRequest {
 }
 
 
-pub async fn get_familles(State(pool): State<SqlitePool>,Path(table):Path<String>) -> Result<impl IntoResponse, AppError> {
+pub async fn get_familles(State(pool): State<PgPool>,Path(table):Path<String>) -> Result<impl IntoResponse, AppError> {
     let sqlc = format!("SELECT id, code, name FROM {} ORDER BY created_at DESC",table);
     let familles: Vec<Famille> =
         sqlx::query_as(&sqlc)
@@ -40,7 +40,7 @@ pub async fn get_familles(State(pool): State<SqlitePool>,Path(table):Path<String
 }
 
 pub async fn add_famille(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(famil_req): Json<FamilleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let query = format!("INSERT INTO {} (id, code, name) VALUES (?, ?, ?)",famil_req.table);
@@ -63,7 +63,7 @@ pub async fn add_famille(
 }
 //
 pub async fn update_famille(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(famil_req): Json<FamilleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let query = format!("UPDATE {} SET code = ?, name = ? WHERE id = ?",famil_req.table);
@@ -89,7 +89,7 @@ pub async fn update_famille(
     ))
 }
 pub async fn delete_famille(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let rows_affected = sqlx::query("DELETE FROM familles WHERE id = ?")

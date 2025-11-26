@@ -1,17 +1,21 @@
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use serde_json::json;
-use sqlx::{SqlitePool, query};
+use sqlx::{PgPool};
 use uuid::Uuid;
 
-use crate::{errors::AppError, models::ligne_document::DocumentDto};
+use crate::{
+    errors::AppError, handlers::reglement_handler::get_regle_no_user,
+    models::ligne_document::DocumentDto,
+};
 
 pub async fn store_document(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(doc): Json<DocumentDto>,
 ) -> Result<impl IntoResponse, AppError> {
     let mut tx = pool.begin().await.map_err(|e| AppError::SqlxError(e))?;
 
-    let mut  query= String::from("
+    let mut query = String::from(
+        "
         INSERT INTO documents (
         document_num, fournisseur_id, client_id, document_date, depot_id, 
         commentaire, type_doc, nombre_article, montant_ttc, taux_remise, montant_remise,
@@ -23,16 +27,19 @@ pub async fn store_document(
      ?, ?, ?, ?, ?, ?,
      ?, ?, ?, ?, ?, ?
      )
-    ");
-    if doc.is_edit==Some(true) {
+    ",
+    );
+    if doc.is_edit == Some(true) {
         delete_ligne_doc(&pool, &doc.id).await?;
-        query= String::from("
+        query = String::from(
+            "
         UPDATE documents SET
         document_num=?, fournisseur_id=?, client_id=?, document_date=?, depot_id=?, 
         commentaire=?, type_doc=?, nombre_article=?, montant_ttc=?, taux_remise=?, montant_remise=?,
         montant_client=?, montant_net=?, montant_tva=?, montant_airsi=?, boutique_id=?, user_id=?
         WHERE id=?
-        ");
+        ",
+        );
     }
 
     sqlx::query(&query)
@@ -61,30 +68,36 @@ pub async fn store_document(
     // Insert des lignes
     for lig in doc.ligs {
         sqlx::query!(
-            r#"
-            INSERT INTO ligne_documents (
-                id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
-                qte, qte_mvt_stock, taux_remise, montant_ttc, montant_net, 
-                montant_remise, achever, synchronise
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-            lig.id,
-            lig.document_id,
-            lig.article_id,
-            lig.prix_achat_ttc,
-            lig.prix_vente_ttc,
-            lig.qte,
-            lig.qte_mvt_stock,
-            lig.taux_remise,
-            lig.montant_ttc,
-            lig.montant_net,
-            lig.montant_remise,
-            lig.achever,
-            lig.synchronise,
-        )
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| AppError::SqlxError(e))?;
+    r#"
+    INSERT INTO ligne_documents (
+        id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
+        qte, qte_mvt_stock, taux_remise, montant_ttc, montant_net, 
+        montant_remise, achever, synchronise
+    ) 
+    VALUES (
+        $1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $10,
+        $11, $12, $13
+    )
+    "#,
+    lig.id,
+    lig.document_id,
+    lig.article_id,
+    lig.prix_achat_ttc,
+    lig.prix_vente_ttc,
+    lig.qte,
+    lig.qte_mvt_stock,
+    lig.taux_remise,
+    lig.montant_ttc,
+    lig.montant_net,
+    lig.montant_remise,
+    lig.achever,
+    lig.synchronise
+)
+.execute(&mut *tx)
+.await
+.map_err(|e| AppError::SqlxError(e))?;
+
     }
     if let Some(reg) = &doc.reglement {
         let query_reg = r#"
@@ -127,14 +140,19 @@ pub async fn store_document(
         )
         "#;
         sqlx::query(rd_query)
-        .bind(reg_doc_id)
-        .bind(&reg.id)
-        .bind(&doc.id)
-        .bind(&reg.montant)
-        .bind(0)
-        .execute(&mut *tx)
-        .await.map_err(|e| AppError::SqlxError(e))?;
-
+            .bind(reg_doc_id)
+            .bind(&reg.id)
+            .bind(&doc.id)
+            .bind(&reg.montant)
+            .bind(0)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| AppError::SqlxError(e))?;
+    }
+    if let Some(client_id) = &doc.client_id {
+        if doc.type_doc == 2 {
+            // get_regle_no_user(&pool, client_id, doc.montant_net, &doc.id).await?;
+        }
     }
 
     tx.commit().await.map_err(|e| AppError::SqlxError(e))?;
@@ -147,20 +165,17 @@ pub async fn store_document(
         })),
     ))
 }
-pub async fn delete_ligne_doc(
-    pool: &SqlitePool,
-    doc_id: &str,
-) -> Result<bool, AppError> {
+pub async fn delete_ligne_doc(pool: &PgPool, doc_id: &str) -> Result<bool, AppError> {
     let query = r#"
         DELETE FROM ligne_documents 
         WHERE document_id = ?
     "#;
 
-    let row_affect  = sqlx::query(query)
+    let row_affect = sqlx::query(query)
         .bind(doc_id)
         .execute(pool)
         .await
         .map_err(AppError::SqlxError)?;
 
-    Ok(row_affect.rows_affected()>0)
+    Ok(row_affect.rows_affected() > 0)
 }

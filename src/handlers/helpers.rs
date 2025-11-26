@@ -8,7 +8,7 @@ use calamine::{Xlsx, XlsxError, open_workbook, open_workbook_from_rs};
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use axum_extra::extract::Multipart;
 use calamine::{DataType, RangeDeserializerBuilder, Reader, open_workbook_auto};
@@ -26,7 +26,7 @@ pub struct TableGetData {
     pub type_doc: String,
 }
 pub async fn get_last_counts(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(tables): Json<TableGetData>,
 ) -> Result<impl IntoResponse, AppError> {
     let query_s: String = if tables.table == "documents" {
@@ -53,7 +53,7 @@ pub async fn get_last_counts(
 
 //store image
 pub async fn upload_file(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
     let mut id = String::new();
@@ -100,14 +100,9 @@ pub async fn upload_file(
         })),
     ))
 }
-//import article
-#[derive(Serialize)]
-struct ImportResponse {
-    success: usize,
-    failed: usize,
-}
+
 pub async fn import_articles(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     mut multipart: Multipart,
 ) -> Result<impl IntoResponse, AppError> {
     let mut file_data = Vec::new();
@@ -223,13 +218,13 @@ pub async fn import_articles(
             sous_famille_id: sous_famille_id.unwrap(), // row.get(3).and_then(|c| c.as_string()).unwrap_or_default(),
             marque_id: marque_id.clone(), // row.get(4).and_then(|c| c.as_string()).unwrap_or_default(),
             unite_id: unite_id.clone(), // row.get(5).and_then(|c| c.as_string()).unwrap_or_default(),
-            alert_stock: 5.0,           // row.get(6).and_then(|c| c.as_f64()).unwrap_or(0.0),
+            alert_stock: 5,           // row.get(6).and_then(|c| c.as_f64()).unwrap_or(0.0),
             is_stock: 1,                //row.get(7).and_then(|c| c.as_i64()).unwrap_or(1) as i8,
             boutique_id: boutique_id.clone(), // Utiliser l'ID de la boutique du formulaire
-            price_buy: row.get(4).and_then(|c| c.as_f64()).unwrap_or(0.0),
-            price_seller: row.get(5).and_then(|c| c.as_f64()).unwrap_or(0.0),
-            stock: row.get(6).and_then(|c| c.as_f64()).unwrap_or(0.0),
-            synchronise: 0,
+            price_buy: row.get(4).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
+            price_seller: row.get(5).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
+            stock: row.get(6).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
+            synchronise: false,
         };
 
         //println!("Article {:?} ",article);
@@ -246,7 +241,7 @@ pub async fn import_articles(
             alert_stock, is_stock, boutique_id, price_buy, 
             price_seller, stock, synchronise
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
             "#,
             article.id,
             article.code,
@@ -306,16 +301,21 @@ pub async fn import_articles(
                 montant_net: article.price_buy * article.stock,
                 montant_remise: 0.0,
                 achever: 1,
-                synchronise: 0,
+                synchronise: false,
             };
             sqlx::query!(
                 r#"
-            INSERT INTO ligne_documents (
-                id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
-                qte, qte_mvt_stock, taux_remise, montant_ttc, montant_net, 
-                montant_remise, achever, synchronise
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
+                INSERT INTO ligne_documents (
+                    id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
+                    qte, qte_mvt_stock, taux_remise, montant_ttc, montant_net, 
+                    montant_remise, achever, synchronise
+                ) 
+                VALUES (
+                    $1, $2, $3, $4, $5,
+                    $6, $7, $8, $9, $10,
+                    $11, $12, $13
+                )
+                "#,
                 lig.id,
                 lig.document_id,
                 lig.article_id,
@@ -328,7 +328,7 @@ pub async fn import_articles(
                 lig.montant_net,
                 lig.montant_remise,
                 lig.achever,
-                lig.synchronise,
+                lig.synchronise
             )
             .execute(&mut *tx)
             .await

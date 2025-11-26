@@ -3,16 +3,16 @@ use axum::response::IntoResponse;
 use axum::{Json, extract::State, http::StatusCode};
 use chrono::Local;
 use serde_json::json;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::errors::AppError;
-use crate::models::client::Client;
+use crate::models::tier::Tier;
 use crate::models::document::Document;
 use crate::models::helper_model::PaginateParam;
 
 pub async fn client_paginates(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Query(params): Query<PaginateParam>,
 ) -> Result<impl IntoResponse, AppError> {
     let mut sqlc = format!(
@@ -51,7 +51,7 @@ LEFT JOIN (
 
     sqlc.push_str(" GROUP BY cls.id ORDER BY created_at DESC LIMIT 25 OFFSET ?");
 
-    let mut q = sqlx::query_as::<_, Client>(&sqlc);
+    let mut q = sqlx::query_as::<_, Tier>(&sqlc);
 
     if let Some(search) = &params.search {
         search_pattern = Some(format!("%{}%", search));
@@ -63,7 +63,7 @@ LEFT JOIN (
 
     q = q.bind(params.offset);
 
-    let fournisseurs: Vec<Client> = q
+    let fournisseurs: Vec<Tier> = q
         .fetch_all(&pool)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -72,8 +72,8 @@ LEFT JOIN (
 }
 
 pub async fn client_add(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<Client>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<Tier>,
 ) -> Result<impl IntoResponse, AppError> {
     let query: String = String::from(
         " INSERT INTO clients (
@@ -117,7 +117,7 @@ pub async fn client_add(
     ))
 }
 pub async fn store_solde_initial(
-     State(pool): State<SqlitePool>,
+     State(pool): State<PgPool>,
     Json(payload): Json<Document>,
 ) -> Result<impl IntoResponse, AppError> {
 
@@ -151,8 +151,8 @@ pub async fn store_solde_initial(
 }
 
 pub async fn client_update(
-    State(pool): State<SqlitePool>,
-    Json(payload): Json<Client>,
+    State(pool): State<PgPool>,
+    Json(payload): Json<Tier>,
 ) -> Result<impl IntoResponse, AppError> {
     let query: String = String::from(
         "

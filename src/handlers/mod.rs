@@ -12,3 +12,4 @@ pub mod user_handler;
 pub mod document_handler;
 pub mod mode_paiement;
 pub mod vente_handler;
+pub mod reglement_handler;

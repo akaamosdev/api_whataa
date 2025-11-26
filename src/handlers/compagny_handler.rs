@@ -4,7 +4,7 @@ use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
 use chrono::{Local, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, PgPool};
 use tracing_subscriber::fmt::format::Format;
 use uuid::Uuid;
 
@@ -18,10 +18,11 @@ pub struct CompagnyCreate {
     pub phone: String,
     pub email: String,
     pub password: String,
+    pub logo: Option<String>,
 }
 
 pub async fn create_compagny(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(payload): Json<CompagnyCreate>,
 ) -> Result<impl IntoResponse, AppError> {
     let compagny_id = Uuid::new_v4().to_string();
@@ -31,16 +32,14 @@ pub async fn create_compagny(
     let query_comp: String = String::from(
         "
         INSERT INTO compagnies (
-        id, denomination,cigle,date_created,capital_so,statut_juridique_id,
-        nb_commerce,nb_contribuable,secteur_act,responsable,
-        address_phy, phone_fix,phone_mobil,taux_tva,taux_airsi,address_mail,
-        logo,sale_negative,synchronise
+        id, denomination,cigle,date_created,statut_juridique_id,
+        responsable, phone_fix,phone_mobil,taux_tva,taux_airsi,address_mail,
+        logo,sale_negative
     )
     VALUES (
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?,
-        ?, ?, ?
+        $1, $2, $3, $4, $5, $6,
+        $7, $8, $9, $10,
+        $11, $12, $13
     )",
     );
 
@@ -60,9 +59,10 @@ pub async fn create_compagny(
         .bind(&payload.phone)
         .bind(0)
         .bind(0)
+        .bind(&payload.email)
         .bind("")
         .bind(0)
-        .bind(0)
+        .bind(false)
         .execute(&mut *tx)
         .await
         .map_err(AppError::SqlxError)?;
@@ -71,7 +71,7 @@ pub async fn create_compagny(
     let admin_query = r#"
     INSERT INTO admins (
         id, name, email, password, phone, compagny_id, synchronise
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
     "#;
     let admin_id = Uuid::new_v4().to_string();
     sqlx::query(admin_query)
@@ -91,7 +91,7 @@ pub async fn create_compagny(
         INSERT INTO boutiques (
             id, compagny_id, code, name, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
     "#;
     let boutiq_id = Uuid::new_v4().to_string();
     sqlx::query(boutiq_query)
@@ -124,7 +124,8 @@ pub async fn create_compagny(
     };
 
     sqlx::query(
-        "INSERT INTO users (id, email, password_hash, created_at,name,role_id,boutique_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, email, password_hash, created_at,name,role_id,boutique_id) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(&user.id)
     .bind(&user.email)
@@ -137,7 +138,7 @@ pub async fn create_compagny(
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    let _ = sqlx::query("INSERT INTO role_user (user_id, role_id) VALUES (?, ?)")
+    let _ = sqlx::query("INSERT INTO role_user (user_id, role_id) VALUES ($1, $2)")
         .bind(&user.id)
         .bind(1)
         .execute(&mut *tx)
@@ -149,7 +150,7 @@ pub async fn create_compagny(
         INSERT INTO depots (
             id, code, name, boutique_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
     "#;
     let depot_id = Uuid::new_v4().to_string();
     sqlx::query(depot_query)
@@ -167,7 +168,7 @@ pub async fn create_compagny(
         INSERT INTO clients (
             id, code, denomination,  defaut,  boutique_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6)
     "#;
     let client_id = Uuid::new_v4().to_string();
     sqlx::query(client_query)
@@ -186,7 +187,7 @@ pub async fn create_compagny(
         INSERT INTO familles (
             id, code, name, compagny_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
     "#;
     let fami_id = Uuid::new_v4().to_string();
     sqlx::query(famille_query)
@@ -204,7 +205,7 @@ pub async fn create_compagny(
         INSERT INTO sous_familles (
             id, code, name, famille_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3, $4, $5)
     "#;
     let sous_fami_id = Uuid::new_v4().to_string();
     sqlx::query(sous_fami_query)
@@ -222,7 +223,7 @@ pub async fn create_compagny(
         INSERT INTO marques (
             id, code, name, compagny_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1,$2,$3,$4,$5)
     "#;
     let marque_id = Uuid::new_v4().to_string();
     sqlx::query(marque_query)
@@ -240,7 +241,7 @@ pub async fn create_compagny(
         INSERT INTO unites (
             id, code, name, compagny_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1,$2,$3,$4,$5)
     "#;
     let unite_id = Uuid::new_v4().to_string();
     sqlx::query(unite_query)
@@ -258,7 +259,7 @@ pub async fn create_compagny(
         INSERT INTO caisses (
             id, code, name, boutique_id, statut, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?, ?)
+        VALUES ($1,$2,$3,$4,$5,$6)
     "#;
     let caisse_id = Uuid::new_v4().to_string();
     sqlx::query(caisse_query)
@@ -277,7 +278,7 @@ pub async fn create_compagny(
         INSERT INTO mode_paiements (
             id, name, compagny_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?)
+        VALUES ($1,$2,$3,$4)
     "#;
     let mode_paiement_id = Uuid::new_v4().to_string();
     sqlx::query(mode_query)
@@ -294,7 +295,7 @@ pub async fn create_compagny(
         INSERT INTO type_depenses (
             id, code, name, boutique_id, synchronise
         ) 
-        VALUES (?, ?, ?, ?, ?)
+        VALUES ($1,$2,$3,$4,$5)
     "#;
     let depense_type_id = Uuid::new_v4().to_string();
     sqlx::query(depense_type_query)

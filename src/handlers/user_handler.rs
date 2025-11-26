@@ -2,11 +2,11 @@
 use axum::{extract::{Path, State}, http::StatusCode, response::IntoResponse, Json};
 use serde::Serialize;
 use serde_json::json;
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{FromRow, PgPool};
 
 use crate::errors::AppError;
 
-pub async fn check_database(State(pool): State<SqlitePool>)-> Result<impl IntoResponse, AppError> {
+pub async fn check_database(State(pool): State<PgPool>)-> Result<impl IntoResponse, AppError> {
     
     let count:i64 = sqlx::query_scalar("SELECT COUNT(id) FROM users")
     .fetch_one(&pool)
@@ -23,7 +23,7 @@ pub struct TiersData{
     pub denomination:String,
 
 }
-pub async fn all_tiers(State(pool): State<SqlitePool>,Path(table):Path<String>) 
+pub async fn all_tiers(State(pool): State<PgPool>,Path(table):Path<String>) 
 -> Result<impl IntoResponse, AppError> {
     let sqlc = format!("SELECT id, denomination FROM {} ORDER BY denomination ASC",table);
     let familles: Vec<TiersData> =

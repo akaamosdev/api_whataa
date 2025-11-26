@@ -1,7 +1,7 @@
 use axum::{extract::{Path, Query, State}, http::StatusCode, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{ FromRow, SqlitePool};
+use sqlx::{ FromRow, PgPool};
 
 use crate::{errors::AppError, models::{document::Document, helper_model::PaginateDocument, ligne_document::{ LigneDocumentShow}}};
 
@@ -20,7 +20,7 @@ pub struct VenteShow{
 }
 
 pub async fn vente_get(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Query(params): Query<PaginateDocument>,
 ) -> Result<impl IntoResponse, AppError> {
     let offset = params.offset.unwrap_or(0);
@@ -76,7 +76,7 @@ pub async fn vente_get(
 }
 
 pub async fn vente_by_id(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Path(doc_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let query = r#"

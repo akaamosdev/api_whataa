@@ -4,7 +4,7 @@ use sqlx::FromRow;
 
 
 #[derive(Debug,Serialize,Deserialize,FromRow)]
-pub struct Client{
+pub struct Tier{
     pub id: String,
     pub code: String,
     pub denomination: String,

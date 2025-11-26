@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{SqlitePool, prelude::FromRow, query};
+use sqlx::{PgPool, prelude::FromRow, query};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -40,7 +40,7 @@ pub struct SousFamilleByFamille {
 }
 
 pub async fn sous_familles_get(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
 ) -> Result<impl IntoResponse, AppError> {
     let sqlc =
         format!("
@@ -56,7 +56,7 @@ pub async fn sous_familles_get(
 }
 
 pub async fn sous_famille_add(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(famil_req): Json<SousFamille>,
 ) -> Result<impl IntoResponse, AppError> {
     let query =
@@ -81,7 +81,7 @@ pub async fn sous_famille_add(
 }
 //
 pub async fn sous_famille_update(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(famil_req): Json<SousFamille>,
 ) -> Result<impl IntoResponse, AppError> {
     let query = format!("UPDATE sous_familles SET code = ?, name = ?, famille_id = ? WHERE id = ?");
@@ -108,7 +108,7 @@ pub async fn sous_famille_update(
     ))
 }
 pub async fn sous_famille_delete(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let rows_affected = sqlx::query("DELETE FROM sous_familles WHERE id = ?")
@@ -132,7 +132,7 @@ pub async fn sous_famille_delete(
 }
 //sous_famille by famille
 pub async fn sous_familles_by_famille(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Path(famille_id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let sqlc = format!(

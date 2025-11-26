@@ -2,14 +2,14 @@ use axum::extract::{Path, Query};
 use axum::response::IntoResponse;
 use axum::{Json, extract::State, http::StatusCode};
 use serde_json::json;
-use sqlx::SqlitePool;
+use sqlx::PgPool;
 
 use crate::errors::AppError;
 use crate::models::articles::{Article, ArticleShow};
 use crate::models::helper_model::PaginateParam;
 
  pub async fn article_paginates(
-      State(pool): State<SqlitePool>,
+      State(pool): State<PgPool>,
       Query(params): Query<PaginateParam>,
   ) -> Result<impl IntoResponse, AppError> {
       let depot_id = params.depot_id.unwrap_or_default();
@@ -66,7 +66,7 @@ use crate::models::helper_model::PaginateParam;
   }
 
  pub async fn article_by_id(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
     let sqlc = format!("SELECT * FROM articles WHERE id=?");
@@ -80,7 +80,7 @@ use crate::models::helper_model::PaginateParam;
 }
 
 pub async fn article_add(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(payload): Json<Article>,
 ) -> Result<impl IntoResponse, AppError> {
     let query: String = String::from(
@@ -128,7 +128,7 @@ pub async fn article_add(
 }
 //
 pub async fn article_update(
-    State(pool): State<SqlitePool>,
+    State(pool): State<PgPool>,
     Json(payload): Json<Article>,
 ) -> Result<impl IntoResponse, AppError> {
     let query: String = String::from(

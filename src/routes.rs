@@ -1,17 +1,29 @@
 use crate::handlers::{
-    auth::{get_all_users, login, register}, client_handler::{client_add, client_paginates,client_update, store_solde_initial}, compagny_handler::create_compagny, document_handler::store_document, famille::{add_famille, delete_famille, get_familles, update_famille}, fournisseur_handler::{fournisseur_add, fournisseur_paginates, fournisseur_update}, helpers::{get_last_counts, import_articles, upload_file}, mode_paiement::get_mode_paiement, product_handler::{article_add, article_by_id, article_paginates, article_update}, sous_famille::{
+    auth::{get_all_users, get_data_default, login, register},
+    client_handler::{client_add, client_paginates, client_update, store_solde_initial},
+    compagny_handler::create_compagny,
+    document_handler::store_document,
+    famille::{add_famille, delete_famille, get_familles, update_famille},
+    fournisseur_handler::{tier_add, tier_paginates, tier_update},
+    helpers::{get_last_counts, import_articles, upload_file},
+    mode_paiement::get_mode_paiement,
+    product_handler::{article_add, article_by_id, article_paginates, article_update},
+    reglement_handler::{delete_regle, regle_client, store_reglement},
+    sous_famille::{
         sous_famille_add, sous_famille_delete, sous_famille_update, sous_familles_by_famille,
         sous_familles_get,
-    }, user_handler::{all_tiers, check_database}, vente_handler::{vente_by_id, vente_get}
+    },
+    user_handler::{all_tiers, check_database},
+    vente_handler::{vente_by_id, vente_get},
 };
-use tower_http::services::ServeDir;
 use axum::{
     Router,
     routing::{get, post},
 };
-use sqlx::SqlitePool;
+use sqlx::{PgPool};
+use tower_http::services::ServeDir;
 
-pub fn create_router(pool: SqlitePool) -> Router {
+pub fn create_router(pool: PgPool) -> Router {
     // Routes pour les familles
     let famille_routes = Router::new().route(
         "/",
@@ -24,27 +36,24 @@ pub fn create_router(pool: SqlitePool) -> Router {
             .put(sous_famille_update)
             .delete(sous_famille_delete),
     );
-    let article_routes = Router::new().route("/", get(article_paginates)
-        .post(article_add)
-        .put(article_update)
-        
-        );
-    let fournisseur_routes = Router::new().route("/",
-    get(fournisseur_paginates)
-                .post(fournisseur_add)
-                .put(fournisseur_update)
-            ) ;
-    let client_routes = Router::new().route("/",
-    get(client_paginates)
-                .post(client_add)
-                .put(client_update)
-            ) ;
-let vente_routes = Router::new().route("/",
-    get(vente_get)
-                .post(store_document)
-               
-                .put(client_update)
-            ) ;
+    let article_routes = Router::new().route(
+        "/",
+        get(article_paginates).post(article_add).put(article_update),
+    );
+    let fournisseur_routes = Router::new().route(
+        "/",
+        get(tier_paginates)
+            .post(tier_add)
+            .put(tier_update),
+    );
+    let client_routes = Router::new().route(
+        "/",
+        get(client_paginates).post(client_add).put(client_update),
+    );
+    let vente_routes =
+        Router::new().route("/", get(vente_get).post(store_document).put(client_update));
+    let reglement_routes = Router::new().route("/", 
+    get(regle_client).post(store_reglement).delete(delete_regle));
     // Router principal
     Router::new()
         .route("/check_database", post(check_database))
@@ -61,6 +70,7 @@ let vente_routes = Router::new().route("/",
         .route("/upload", post(upload_file))
         .route("/import_articles", post(import_articles))
         .route("/solde_initial", post(store_solde_initial))
+        .route("/default/data", get(get_data_default))
         .nest_service("/uploads", ServeDir::new("./uploads"))
         .nest("/familles", famille_routes)
         .nest("/sous_familles", sous_famille_routes)
@@ -68,6 +78,7 @@ let vente_routes = Router::new().route("/",
         .nest("/fournisseurs", fournisseur_routes)
         .nest("/clients", client_routes)
         .nest("/ventes", vente_routes)
+        .nest("/clients/reglements", reglement_routes)
         //vente by id
         .route("/vente/{doc_id}", get(vente_by_id))
         .with_state(pool)

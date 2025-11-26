@@ -1,8 +1,7 @@
 pub mod articles;
 pub mod user;
 pub mod helper_model;
-pub mod fournisseur;
-pub mod client;
+pub mod tier;
 pub mod document;
 pub mod compagnie;
 pub mod ligne_document;
