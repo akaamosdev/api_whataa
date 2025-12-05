@@ -1,6 +1,9 @@
+use std::any::Any;
+
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use chrono::NaiveDate;
 use serde_json::json;
-use sqlx::{PgPool};
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::{
@@ -17,41 +20,40 @@ pub async fn store_document(
     let mut query = String::from(
         "
         INSERT INTO documents (
-        document_num, fournisseur_id, client_id, document_date, depot_id, 
-        commentaire, type_doc, nombre_article, montant_ttc, taux_remise, montant_remise,
+        document_num, tier_id, document_date, depot_id, 
+        commentaire, type_doc, montant_ht, taux_remise, montant_remise,
         montant_client, montant_net, montant_tva, montant_airsi, boutique_id, user_id,
+        montant_total, doc_parent_id,
         id
-    ) 
-    VALUES(
-     ?, ?, ?, ?, ?, ?,
-     ?, ?, ?, ?, ?, ?,
-     ?, ?, ?, ?, ?, ?
-     )
+        ) 
+        VALUES(
+        $1, $2, $3, $4,
+        $5, $6, $7, $8, $9,
+        $10, $11, $12, $13, $14, $15, $16, $17, $18
+        )
     ",
     );
     if doc.is_edit == Some(true) {
-        delete_ligne_doc(&pool, &doc.id).await?;
+      delete_ligne_doc(&pool, &doc.id).await?;
         query = String::from(
             "
         UPDATE documents SET
-        document_num=?, fournisseur_id=?, client_id=?, document_date=?, depot_id=?, 
-        commentaire=?, type_doc=?, nombre_article=?, montant_ttc=?, taux_remise=?, montant_remise=?,
-        montant_client=?, montant_net=?, montant_tva=?, montant_airsi=?, boutique_id=?, user_id=?
-        WHERE id=?
+        document_num = $1, tier_id = $2, document_date = $3, depot_id = $4,
+        commentaire = $5, type_doc = $6, montant_ht = $7, taux_remise = $8, montant_remise = $9,
+        montant_client = $10, montant_net = $11, montant_tva = $12, montant_airsi = $13, boutique_id = $14,
+        user_id = $15, montant_total= $16, doc_parent_id= $17 WHERE id = $18
         ",
         );
     }
 
     sqlx::query(&query)
         .bind(&doc.document_num)
-        .bind(&doc.fournisseur_id)
-        .bind(&doc.client_id)
+        .bind(&doc.tier_id)
         .bind(&doc.document_date)
         .bind(&doc.depot_id)
         .bind(&doc.commentaire)
         .bind(&doc.type_doc)
-        .bind(&doc.nombre_article)
-        .bind(&doc.montant_ttc)
+        .bind(&doc.montant_ht)
         .bind(&doc.taux_remise)
         .bind(&doc.montant_remise)
         .bind(&doc.montant_client)
@@ -60,64 +62,72 @@ pub async fn store_document(
         .bind(&doc.montant_airsi)
         .bind(&doc.boutique_id)
         .bind(&doc.user_id)
+        .bind(&doc.montant_total)
+        .bind(&doc.doc_parent_id)
         .bind(&doc.id)
         .execute(&mut *tx)
         .await
         .map_err(|e| AppError::SqlxError(e))?;
 
     // Insert des lignes
-    for lig in doc.ligs {
+    for lig in doc.lignes {
         sqlx::query!(
-    r#"
-    INSERT INTO ligne_documents (
-        id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
-        qte, qte_mvt_stock, taux_remise, montant_ttc, montant_net, 
-        montant_remise, achever, synchronise
-    ) 
-    VALUES (
-        $1, $2, $3, $4, $5,
-        $6, $7, $8, $9, $10,
-        $11, $12, $13
-    )
-    "#,
-    lig.id,
-    lig.document_id,
-    lig.article_id,
-    lig.prix_achat_ttc,
-    lig.prix_vente_ttc,
-    lig.qte,
-    lig.qte_mvt_stock,
-    lig.taux_remise,
-    lig.montant_ttc,
-    lig.montant_net,
-    lig.montant_remise,
-    lig.achever,
-    lig.synchronise
-)
-.execute(&mut *tx)
-.await
-.map_err(|e| AppError::SqlxError(e))?;
+            r#"
+            INSERT INTO ligne_documents (
+                id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
+                qte, qte_mvt_stock, montant_ttc, montant_net, 
+                montant_remise
+            ) 
+            VALUES (
+                $1, $2, $3, $4, $5,
+                $6, $7, $8, $9, $10
+            )
+            "#,
+            lig.id,
+            lig.document_id,
+            lig.article_id,
+            lig.prix_achat_ttc,
+            lig.prix_vente_ttc,
+            lig.qte,
+            lig.qte_mvt_stock,
+            lig.montant_ttc,
+            lig.montant_net,
+            lig.montant_remise
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::SqlxError(e))?;
 
+        sqlx::query!(
+            r#"
+        UPDATE articles SET 
+        stock = stock + $1
+        WHERE id = $2
+        "#,
+            &lig.qte_mvt_stock,
+            &lig.article_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::SqlxError(e))?;
     }
     if let Some(reg) = &doc.reglement {
         let query_reg = r#"
         INSERT INTO reglements (
-            id, user_id, client_id, fournisseur_id, document_id, boutique_id, caisse_id,
+            id, user_id, tier_id, boutique_id, caisse_id,
             reglement_num, reglement_date, commentaire, montant, mode_paiement_id, 
-            reference, synchronise
+            reference
         )
         VALUES(
-            ?, ?, ?, ?, ?, ?, ?,
-            ?, ?, ?, ?, ?,
-            ?, ?
+        $1, $2, $3, $4, $5,
+        $6, $7::date, $8, $9, $10, $11
         )
         "#;
+        
         sqlx::query(query_reg)
             .bind(&reg.id)
             .bind(&reg.user_id)
-            .bind(&reg.client_id)
-            .bind(&reg.fournisseur_id)
-            .bind(&reg.document_id)
+            .bind(&reg.tier_id)
             .bind(&reg.boutique_id)
             .bind(&reg.caisse_id)
             .bind(&reg.reglement_num)
@@ -126,17 +136,17 @@ pub async fn store_document(
             .bind(&reg.montant)
             .bind(&reg.mode_paiement_id)
             .bind(&reg.reference)
-            .bind(&reg.synchronise)
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::SqlxError(e))?;
+        
 
         let reg_doc_id = Uuid::new_v4().to_string();
         let rd_query = r#"
         INSERT INTO reglement_documents (
-            id, reglement_id, document_id, montant, synchronise
+            id, reglement_id, document_id, montant
         ) VALUES (
-         ?, ?, ?, ?, ?
+            $1, $2, $3, $4
         )
         "#;
         sqlx::query(rd_query)
@@ -144,16 +154,15 @@ pub async fn store_document(
             .bind(&reg.id)
             .bind(&doc.id)
             .bind(&reg.montant)
-            .bind(0)
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::SqlxError(e))?;
     }
-    if let Some(client_id) = &doc.client_id {
-        if doc.type_doc == 2 {
-            // get_regle_no_user(&pool, client_id, doc.montant_net, &doc.id).await?;
-        }
-    }
+    // if doc.doc_parent_id.is_some() {
+    //     sqlx::query!(r#"
+    //     UPDATE documents SET doc
+    //     "#)
+    // }
 
     tx.commit().await.map_err(|e| AppError::SqlxError(e))?;
 
@@ -165,10 +174,11 @@ pub async fn store_document(
         })),
     ))
 }
+
 pub async fn delete_ligne_doc(pool: &PgPool, doc_id: &str) -> Result<bool, AppError> {
     let query = r#"
         DELETE FROM ligne_documents 
-        WHERE document_id = ?
+        WHERE document_id = $1
     "#;
 
     let row_affect = sqlx::query(query)

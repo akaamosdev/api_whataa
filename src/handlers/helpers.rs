@@ -24,6 +24,7 @@ use crate::{
 pub struct TableGetData {
     pub table: String,
     pub type_doc: String,
+    pub type_tier: Option<String>,
 }
 pub async fn get_last_counts(
     State(pool): State<PgPool>,
@@ -34,7 +35,12 @@ pub async fn get_last_counts(
             "SELECT COUNT(*) AS count FROM documents WHERE type_doc='{}'",
             tables.type_doc
         )
-    } else {
+    } else if tables.table=="tiers"{
+        format!(
+            "SELECT COUNT(*) AS counts FROM tiers WHERE type_tier='{}'",
+            tables.type_tier.unwrap_or("CLIENT".to_string())
+        )
+    } else{
         format!("SELECT COUNT(*) AS counts FROM {}", tables.table)
     };
     let count: i64 = sqlx::query_scalar(&query_s)
@@ -71,18 +77,18 @@ pub async fn upload_file(
             Some("upload_image") => {
                 // let file_name = field.file_name().unwrap_or("upload.png").to_string();
                 let data = field.bytes().await.unwrap();
-
-                tokio::fs::write(format!("./uploads/{}image.png", id), &data)
+                let id_img = Uuid::new_v4().to_string() ;
+                tokio::fs::write(format!("./uploads/{}image.png", id_img), &data)
                     .await
                     .unwrap();
 
-                url = format!("/uploads/{}image.png", id);
+                url = format!("/uploads/{}image.png", id_img);
             }
             _ => {}
         }
     }
     let column = if table == "articles" { "image" } else { "logo" };
-    let query = format!("UPDATE {} SET {} = ? WHERE id = ?", table, column);
+    let query = format!("UPDATE {} SET {} = $1 WHERE id = $2", table, column);
 
     let rows_affected = sqlx::query(&query)
         .bind(&url)
@@ -175,7 +181,7 @@ pub async fn import_articles(
         let mut sous_famille_id: Option<String> = sqlx::query_scalar(
             "
                 SELECT id FROM sous_familles 
-                WHERE name=?",
+                WHERE name=$1",
         )
         .bind(&sous_famille)
         .fetch_optional(&mut *tx)
@@ -185,7 +191,7 @@ pub async fn import_articles(
         if sous_famille_id.is_none() {
             let famid: String = uuid::Uuid::new_v4().to_string();
             let code: String = format!("{}{}", &sous_famille[0..3], "01");
-            sqlx::query("INSERT INTO familles (id, code, name ) VALUES (?, ?, ?)")
+            sqlx::query("INSERT INTO familles (id, code, name ) VALUES ($1, $2, $3)")
                 .bind(&famid)
                 .bind(code)
                 .bind(&sous_famille)
@@ -195,7 +201,7 @@ pub async fn import_articles(
             let new_sou_fami_id = uuid::Uuid::new_v4().to_string();
             let s_code: String = format!("S{}{}", &sous_famille[0..3], "01");
             sqlx::query(
-                "INSERT INTO sous_familles (id, code, name, famille_id ) VALUES (?, ?, ?, ?)",
+                "INSERT INTO sous_familles (id, code, name, famille_id ) VALUES ($1, $2, $3, $4)",
             )
             .bind(&new_sou_fami_id)
             .bind(s_code)
@@ -218,13 +224,15 @@ pub async fn import_articles(
             sous_famille_id: sous_famille_id.unwrap(), // row.get(3).and_then(|c| c.as_string()).unwrap_or_default(),
             marque_id: marque_id.clone(), // row.get(4).and_then(|c| c.as_string()).unwrap_or_default(),
             unite_id: unite_id.clone(), // row.get(5).and_then(|c| c.as_string()).unwrap_or_default(),
-            alert_stock: 5,           // row.get(6).and_then(|c| c.as_f64()).unwrap_or(0.0),
-            is_stock: 1,                //row.get(7).and_then(|c| c.as_i64()).unwrap_or(1) as i8,
+            alert_stock: 5.0,           // row.get(6).and_then(|c| c.as_f64()).unwrap_or(0.0),
+            is_stock: true,                //row.get(7).and_then(|c| c.as_i64()).unwrap_or(1) as i8,
             boutique_id: boutique_id.clone(), // Utiliser l'ID de la boutique du formulaire
             price_buy: row.get(4).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
             price_seller: row.get(5).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
             stock: row.get(6).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
-            synchronise: false,
+            doc_defaut_id: "".to_string(),
+            depot_defaut_id: None,
+            user_id: None,
         };
 
         //println!("Article {:?} ",article);
@@ -239,9 +247,9 @@ pub async fn import_articles(
             id, code, code_bar, name, sous_famille_id, 
             marque_id, unite_id, 
             alert_stock, is_stock, boutique_id, price_buy, 
-            price_seller, stock, synchronise
+            price_seller, stock
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             "#,
             article.id,
             article.code,
@@ -256,13 +264,13 @@ pub async fn import_articles(
             article.price_buy,
             article.price_seller,
             article.stock,
-            article.synchronise
         )
         .execute(&mut *tx)
         .await
         .map_err(AppError::SqlxError)?;
 
-        if article.stock != 0.0 {
+        if article.stock!= 0.0 {
+             // Initialiser le document de stock si le stock est fourni
             if doc_id.is_empty() {
                 doc_id = Uuid::new_v4().to_string();
                 let doc_date = Local::now().date_naive().to_string();
@@ -272,8 +280,7 @@ pub async fn import_articles(
             commentaire, type_doc, boutique_id
             ) 
             VALUES(
-            ?, ?, ?, ?,
-            ?, ?, ?
+                $1, $2, $3, $4, $5, $6, $7 
             )
             "#;
                 sqlx::query(query_doc)
@@ -296,24 +303,21 @@ pub async fn import_articles(
                 prix_vente_ttc: article.price_seller * article.stock,
                 qte: article.stock,
                 qte_mvt_stock: article.stock,
-                taux_remise: 0.0,
                 montant_ttc: article.price_buy * article.stock,
                 montant_net: article.price_buy * article.stock,
                 montant_remise: 0.0,
-                achever: 1,
-                synchronise: false,
+                
             };
             sqlx::query!(
                 r#"
                 INSERT INTO ligne_documents (
                     id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
-                    qte, qte_mvt_stock, taux_remise, montant_ttc, montant_net, 
-                    montant_remise, achever, synchronise
+                    qte, qte_mvt_stock, montant_ttc, montant_net, 
+                    montant_remise
                 ) 
                 VALUES (
                     $1, $2, $3, $4, $5,
-                    $6, $7, $8, $9, $10,
-                    $11, $12, $13
+                    $6, $7, $8, $9, $10
                 )
                 "#,
                 lig.id,
@@ -323,12 +327,9 @@ pub async fn import_articles(
                 lig.prix_vente_ttc,
                 lig.qte,
                 lig.qte_mvt_stock,
-                lig.taux_remise,
                 lig.montant_ttc,
                 lig.montant_net,
-                lig.montant_remise,
-                lig.achever,
-                lig.synchronise
+                lig.montant_remise
             )
             .execute(&mut *tx)
             .await
@@ -349,3 +350,7 @@ pub async fn import_articles(
         })),
     ))
 }
+
+
+
+

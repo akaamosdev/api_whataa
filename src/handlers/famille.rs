@@ -43,7 +43,7 @@ pub async fn add_famille(
     State(pool): State<PgPool>,
     Json(famil_req): Json<FamilleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let query = format!("INSERT INTO {} (id, code, name) VALUES (?, ?, ?)",famil_req.table);
+    let query = format!("INSERT INTO {} (id, code, name) VALUES ($1,$2,$3)",famil_req.table);
 
     sqlx::query(&query)
         .bind(&famil_req.id)
@@ -66,7 +66,7 @@ pub async fn update_famille(
     State(pool): State<PgPool>,
     Json(famil_req): Json<FamilleRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    let query = format!("UPDATE {} SET code = ?, name = ? WHERE id = ?",famil_req.table);
+    let query = format!("UPDATE {} SET code = $1, name = $2 WHERE id = $3",famil_req.table);
     let rows_affected = sqlx::query(&query)
         .bind(&famil_req.code)
         .bind(&famil_req.name)
@@ -92,7 +92,7 @@ pub async fn delete_famille(
     State(pool): State<PgPool>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let rows_affected = sqlx::query("DELETE FROM familles WHERE id = ?")
+    let rows_affected = sqlx::query("DELETE FROM familles WHERE id = $1")
         .bind(&id)
         .execute(&pool)
         .await

@@ -60,7 +60,7 @@ pub async fn sous_famille_add(
     Json(famil_req): Json<SousFamille>,
 ) -> Result<impl IntoResponse, AppError> {
     let query =
-        format!("INSERT INTO sous_familles (id, code, name, famille_id) VALUES (?, ?, ?, ?)");
+        format!("INSERT INTO sous_familles (id, code, name, famille_id) VALUES ($1,$2,$3,$4)");
 
     sqlx::query(&query)
         .bind(&famil_req.id)
@@ -84,7 +84,7 @@ pub async fn sous_famille_update(
     State(pool): State<PgPool>,
     Json(famil_req): Json<SousFamille>,
 ) -> Result<impl IntoResponse, AppError> {
-    let query = format!("UPDATE sous_familles SET code = ?, name = ?, famille_id = ? WHERE id = ?");
+    let query = format!("UPDATE sous_familles SET code = $1, name = $2, famille_id = $3 WHERE id = $4");
     let rows_affected = sqlx::query(&query)
         .bind(&famil_req.code)
         .bind(&famil_req.name)
@@ -111,7 +111,7 @@ pub async fn sous_famille_delete(
     State(pool): State<PgPool>,
     Path(id): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let rows_affected = sqlx::query("DELETE FROM sous_familles WHERE id = ?")
+    let rows_affected = sqlx::query("DELETE FROM sous_familles WHERE id = $1")
         .bind(&id)
         .execute(&pool)
         .await
@@ -139,7 +139,7 @@ pub async fn sous_familles_by_famille(
         "
     SELECT sous_familles.*, familles.name AS famille FROM sous_familles 
     INNER JOIN familles ON familles.id=sous_familles.famille_id
-    WHERE famille_id=?"
+    WHERE famille_id=$1"
     );
     let sous_familles: Vec<SousFamilleByFamille> = sqlx::query_as(&sqlc)
         .bind(&famille_id)

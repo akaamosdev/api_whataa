@@ -41,16 +41,16 @@ pub async fn register(
         name: payload.name,
         role_id: payload.role_id,
         boutique_id: payload.boutique_id,
-        created_at: Utc::now().to_rfc3339(),
     };
 
     sqlx::query(
-        "INSERT INTO users (id, email, password_hash, created_at,name,role_id,boutique_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (
+        id, email, password_hash, created_at,name,role_id,boutique_id) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&user.id)
     .bind(&user.email)
     .bind(&user.password_hash)
-    .bind(&user.created_at)
     .bind(&user.name)
     .bind(&user.role_id)
     .bind(&user.boutique_id)

@@ -20,14 +20,20 @@ pub async fn check_database(State(pool): State<PgPool>)-> Result<impl IntoRespon
 #[derive(Serialize, FromRow)]
 pub struct TiersData{
     pub id:String,
-    pub denomination:String,
+    pub name:String,
 
 }
-pub async fn all_tiers(State(pool): State<PgPool>,Path(table):Path<String>) 
+pub async fn all_tiers(State(pool): State<PgPool>,
+    Path(type_tier): Path<String>
+)
 -> Result<impl IntoResponse, AppError> {
-    let sqlc = format!("SELECT id, denomination FROM {} ORDER BY denomination ASC",table);
+    let sqlc = format!("
+    SELECT id, denomination AS name FROM tiers 
+    WHERE type_tier=$1
+    ORDER BY denomination ASC");
     let familles: Vec<TiersData> =
         sqlx::query_as(&sqlc)
+            .bind(type_tier)
             .fetch_all(&pool)
             .await
             .map_err(|e| AppError::Internal(e.to_string()))?;
