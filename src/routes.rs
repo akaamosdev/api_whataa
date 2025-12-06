@@ -66,7 +66,7 @@ pub fn create_router(pool: PgPool) -> Router {
         .nest("/articles", article_routes)
         .nest("/tiers", tier_routes)
         .nest("/documents", document_routes)
-        .nest("/clients/reglements", reglement_routes)
+        .nest("/reglements", reglement_routes)
         //vente by id
         .route("/document/{doc_id}", get(vente_by_id))
         .route("/articles/doc", get(article_documents))

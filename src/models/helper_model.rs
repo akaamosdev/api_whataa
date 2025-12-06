@@ -15,6 +15,9 @@ pub struct PaginateDocument {
     pub search: Option<String>,
     pub type_doc: i32,
     pub type_tier: String,
+    pub limit: i64,
+    pub date_start: Option<String>,
+    pub date_end: Option<String>,
 
 }
 

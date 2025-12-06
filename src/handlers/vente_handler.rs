@@ -26,51 +26,92 @@ pub async fn vente_get(
     Query(params): Query<PaginateDocument>,
 ) -> Result<impl IntoResponse, AppError> {
     let offset = params.offset;
+    let limit = params.limit;
 
     let mut sqlc = String::from("
-        SELECT d.id, d.document_num, d.document_date, denomination, d.montant_tva, d.montant_ht,d.montant_total, 
-               d.montant_net, d.montant_remise, COALESCE(t_rd, 0) AS paye, d.montant_net - COALESCE(t_rd, 0) AS reste,
+        SELECT d.id, d.document_num, d.document_date, denomination,
+               d.montant_tva, d.montant_ht, d.montant_total,
+               d.montant_net, d.montant_remise,
+               COALESCE(t_rd, 0) AS paye,
+               d.montant_net - COALESCE(t_rd, 0) AS reste,
                doc_fs.id AS doc_fils_id
         FROM documents d
         INNER JOIN tiers ts ON ts.id = d.tier_id
-        LEFT JOIN documents AS doc_fs ON doc_fs.doc_parent_id=d.id
+        LEFT JOIN documents AS doc_fs ON doc_fs.doc_parent_id = d.id
         LEFT JOIN reglement_documents rd ON rd.document_id = d.id
         LEFT JOIN (
             SELECT document_id, SUM(montant) AS t_rd
-            FROM reglement_documents rds
+            FROM reglement_documents
             GROUP BY document_id
         ) AS rds ON rds.document_id = d.id
-        WHERE d.type_doc = $1 AND ts.type_tier = $2 
+        WHERE d.type_doc = $1
+        AND ts.type_tier = $2
     ");
 
-    let search_pattern = params.search.as_ref().map(|s| format!("%{}%", s));
-    if search_pattern.is_some() {
-        sqlc.push_str(
-            " AND (denomination ILIKE $3
-                   OR d.document_num ILIKE $4
-                   OR d.document_date::text ILIKE $5 
-                   OR d.montant_net::text ILIKE $6) ",
-        );
-        sqlc.push_str(" ORDER BY d.created_at DESC LIMIT 25 OFFSET $7");
-    }else {
-        sqlc.push_str(" ORDER BY d.created_at DESC LIMIT 25 OFFSET $3");
-    }
-    // Prépare la requête
-    let mut query = sqlx::query_as::<_, VenteShow>(&sqlc);
-    query = query.bind(params.type_doc).bind(params.type_tier);
+    // -----------------------------
+    // Conditions dynamiques
+    // -----------------------------
 
-    // Bind search si présent
+    let search_pattern = params.search.as_ref().map(|s| format!("%{}%", s));
+
+    let mut idx = 3; // prochain paramètre dispo
+
+    // Condition date_search
+    if params.date_start.is_some() {
+        sqlc.push_str(&format!(" AND d.document_date >= ${}", idx));
+        idx += 1;
+    }
+    if params.date_end.is_some() {
+        sqlc.push_str(&format!(" AND d.document_date <= ${}", idx));
+        idx += 1;
+    }
+
+    // Condition search
+    if search_pattern.is_some() {
+        sqlc.push_str(&format!(
+            " AND (denomination ILIKE ${}
+                   OR d.document_num ILIKE ${}
+                   OR d.montant_net::text ILIKE ${})",
+            idx,
+            idx + 1,
+            idx + 2
+        ));
+        idx += 3;
+    }
+
+    // ORDER + LIMIT
+    sqlc.push_str(&format!(" ORDER BY d.created_at DESC LIMIT ${} OFFSET ${}", idx, idx + 1));
+
+    // -----------------------------
+    // Bind
+    // -----------------------------
+
+    let mut query = sqlx::query_as::<_, VenteShow>(&sqlc);
+
+    // $1 et $2
+    query = query
+        .bind(params.type_doc)
+        .bind(params.type_tier);
+
+    // $3 éventuel : date_search
+    if let Some(date_start) = params.date_start {
+        query = query.bind(date_start);
+    }
+    if let Some(date_end) = params.date_end {
+        query = query.bind(date_end);
+    }
+
+    // search
     if let Some(ref pattern) = search_pattern {
         query = query
-            .bind(pattern)
-            .bind(pattern)
-            .bind(pattern)
-            .bind(pattern)
-            .bind(offset);
-    }else {
-         query = query.bind(offset);
+            .bind(pattern) // denom
+            .bind(pattern) // num
+            .bind(pattern); // montant_net
     }
-    // Bind offset
+
+    // limit + offset (toujours à la fin)
+    query = query.bind(limit).bind(offset);
+
     let ventes: Vec<VenteShow> = query
         .fetch_all(&pool)
         .await

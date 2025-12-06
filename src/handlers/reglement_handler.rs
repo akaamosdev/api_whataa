@@ -6,8 +6,8 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{Postgres, Transaction};
 use sqlx::{PgPool, prelude::FromRow};
+use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
@@ -42,13 +42,13 @@ pub struct ReglementDetail {
 #[derive(Debug, Serialize, Deserialize, FromRow)]
 pub struct ReglementData {
     id: String,
+    user_id: String,
     reglement_num: String,
     reglement_date: String,
-    montant: f64,
+    montant: f32,
     boutique_id: String,
     caisse_id: String,
-    fournisseur_id: Option<String>,
-    client_id: Option<String>,
+    tier_id: String,
     mode_paiement_id: String,
     commentaire: String,
     reference: String,
@@ -106,30 +106,34 @@ pub async fn store_reglement(
     State(pool): State<PgPool>,
     Json(regle): Json<ReglementData>,
 ) -> Result<impl IntoResponse, AppError> {
-    let mut query_c = "
+    let query_c = "
         INSERT INTO reglements(
-            reglement_num, reglement_date, montant, 
-            boutique_id, caisse_id, fournisseur_id, client_id, mode_paiement_id,
+            user_id, reglement_num, reglement_date, montant, 
+            boutique_id, caisse_id, tier_id, mode_paiement_id,
             commentaire, reference, id
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES ($1, $2, $3::date, $4, $5, $6, $7, $8, $9, $10, $11)
     ";
     if regle.is_edit == Some(true) {
-        query_c = "
-            UPDATE reglements SET reglement_num=?, reglement_date=?, montant=?, 
-            boutique_id=?, caisse_id=?, fournisseur_id=?, client_id=?, mode_paiement_id=?,
-            commentaire=?, reference=? WHERE id=?
-        ";
+        sqlx::query!(
+            r#"
+            DELETE FROM reglements WHERE id=$1
+        "#,
+            regle.id
+        )
+        .execute(&pool)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
     }
 
     sqlx::query(&query_c)
+        .bind(&regle.user_id)
         .bind(regle.reglement_num)
         .bind(regle.reglement_date)
         .bind(regle.montant)
         .bind(regle.boutique_id)
         .bind(regle.caisse_id)
-        .bind(regle.fournisseur_id)
-        .bind(&regle.client_id)
+        .bind(&regle.tier_id)
         .bind(regle.mode_paiement_id)
         .bind(regle.commentaire)
         .bind(regle.reference)
@@ -138,12 +142,10 @@ pub async fn store_reglement(
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
     // regle doc
-    if let Some(client_id) = &regle.client_id {
-        get_docs_client(&pool, client_id, &regle.id, regle.montant).await?;
-    }
+    get_docs_client(&pool, &regle.tier_id, &regle.id, regle.montant).await?;
 
     Ok((
-        StatusCode::OK,
+        StatusCode::CREATED ,
         Json(json!({
             "statut": true
         })),
@@ -154,7 +156,7 @@ async fn get_docs_client(
     pool: &PgPool,
     client_id: &str,
     reglement_id: &str,
-    mut montant_total: f64,
+    mut montant_total: f32,
 ) -> Result<(), AppError> {
     // Démarre une transaction pour assurer la cohérence des écritures
     let mut tx: Transaction<'_, Postgres> = pool
@@ -164,23 +166,27 @@ async fn get_docs_client(
 
     // 1️⃣ Récupérer les documents non totalement réglés
     let regle_docs = "
-        SELECT documents.id AS doc_id,
-               documents.montant_net - COALESCE(regle_docs.montant_doc_regle, 0) AS reste
+        SELECT 
+        documents.id AS doc_id,
+        montant_net - COALESCE(regle_docs.montant_doc_regle, 0) AS reste
         FROM documents
-        INNER JOIN clients ON clients.id = documents.client_id
+        INNER JOIN tiers ON tiers.id = documents.tier_id
         LEFT JOIN (
-            SELECT reglement_documents.document_id,
-                   COALESCE(SUM(reglement_documents.montant), 0) AS montant_doc_regle
+            SELECT 
+                document_id, 
+                COALESCE(SUM(montant), 0) AS montant_doc_regle
             FROM reglement_documents
-            GROUP BY reglement_documents.document_id
+            GROUP BY document_id
         ) AS regle_docs ON regle_docs.document_id = documents.id
-        WHERE type_doc = 2 AND clients.id = ?
-        GROUP BY documents.id
-        HAVING reste > 0
-        ORDER BY documents.created_at ASC
+        WHERE (type_doc = 2 OR type_doc = 1)
+        AND tiers.id = $1
+        GROUP BY documents.id, montant_net, regle_docs.montant_doc_regle
+        HAVING montant_net - COALESCE(regle_docs.montant_doc_regle, 0) > 0
+        ORDER BY documents.created_at ASC;
+
     ";
 
-    let docs: Vec<(String, f64)> = sqlx::query_as(regle_docs)
+    let docs: Vec<(String, f32)> = sqlx::query_as(regle_docs)
         .bind(client_id)
         .fetch_all(&mut *tx)
         .await
@@ -202,7 +208,7 @@ async fn get_docs_client(
         sqlx::query(
             "
             INSERT INTO reglement_documents ( id, reglement_id, document_id, montant)
-            VALUES (?, ?, ?, ?)
+            VALUES ($1, $2, $3, $4)
         ",
         )
         .bind(Uuid::new_v4().to_string())
@@ -232,7 +238,7 @@ pub async fn delete_regle(
     Json(playbod): Json<DeletePayload>,
 ) -> Result<impl IntoResponse, AppError> {
     let query = "
-    DELETE FROM reglement_documents WHERE reglement_id=?
+    DELETE FROM reglement_documents WHERE reglement_id=$1
     ";
     sqlx::query(query)
         .bind(&playbod.regle_id)
@@ -241,7 +247,7 @@ pub async fn delete_regle(
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
     let query_c = "
-    DELETE FROM reglements WHERE id=?
+    DELETE FROM reglements WHERE id=$1
     ";
     sqlx::query(query_c)
         .bind(&playbod.regle_id)
@@ -280,25 +286,24 @@ pub async fn get_regle_no_user(
         
     ",
     );
-    
+
     if let Some(client) = playbod.client_id {
-        client_id=client;
+        client_id = client;
         payments_sql.push_str(" AND r.client_id = ?");
-       
     }
     if let Some(fournisseur) = playbod.fournisseur_id {
-        fournisseur_id=fournisseur;
+        fournisseur_id = fournisseur;
         payments_sql.push_str(" AND r.fournisseur_id = ?");
     }
 
     payments_sql.push_str("ORDER BY r.reglement_date ASC");
     let mut regle_nos = sqlx::query_as::<_, (String, f64)>(&payments_sql);
-    
+
     if !client_id.is_empty() {
-        regle_nos=regle_nos.bind(client_id);
+        regle_nos = regle_nos.bind(client_id);
     }
     //
-   let regles  = regle_nos
+    let regles = regle_nos
         .fetch_all(&pool)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -316,7 +321,7 @@ pub async fn get_regle_no_user(
 
         sqlx::query(
             "INSERT INTO reglement_documents (id, reglement_id, document_id, montant)
-             VALUES (?, ?, ?, ?)",
+             VALUES ($1, $2, $3, $4)",
         )
         .bind(Uuid::new_v4().to_string())
         .bind(reglement_id)
