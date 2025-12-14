@@ -1,14 +1,21 @@
-use std::any::Any;
-
-use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json,
+    extract::{Query, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
 use chrono::NaiveDate;
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{Execute, PgPool};
 use uuid::Uuid;
 
 use crate::{
-    errors::AppError, handlers::reglement_handler::get_regle_no_user,
-    models::ligne_document::DocumentDto,
+    errors::AppError,
+    handlers::reglement_handler::{DeletePayload, get_regle_no_user},
+    models::{
+        document::{ ApprouveParam, StockList, StockParam},
+        ligne_document::{DocumentDto, LigneResetStock},
+    },
 };
 
 pub async fn store_document(
@@ -23,25 +30,25 @@ pub async fn store_document(
         document_num, tier_id, document_date, depot_id, 
         commentaire, type_doc, montant_ht, taux_remise, montant_remise,
         montant_client, montant_net, montant_tva, montant_airsi, boutique_id, user_id,
-        montant_total, doc_parent_id,
+        montant_total, doc_parent_id, attente,
         id
         ) 
         VALUES(
         $1, $2, $3, $4,
         $5, $6, $7, $8, $9,
-        $10, $11, $12, $13, $14, $15, $16, $17, $18
+        $10, $11, $12, $13, $14, $15, $16, $17, $18, $19
         )
     ",
     );
     if doc.is_edit == Some(true) {
-      delete_ligne_doc(&pool, &doc.id).await?;
+        delete_ligne_doc(&pool, &doc.id).await?;
         query = String::from(
             "
         UPDATE documents SET
         document_num = $1, tier_id = $2, document_date = $3, depot_id = $4,
         commentaire = $5, type_doc = $6, montant_ht = $7, taux_remise = $8, montant_remise = $9,
         montant_client = $10, montant_net = $11, montant_tva = $12, montant_airsi = $13, boutique_id = $14,
-        user_id = $15, montant_total= $16, doc_parent_id= $17 WHERE id = $18
+        user_id = $15, montant_total= $16, doc_parent_id= $17, attente= $18 WHERE id = $19
         ",
         );
     }
@@ -64,6 +71,7 @@ pub async fn store_document(
         .bind(&doc.user_id)
         .bind(&doc.montant_total)
         .bind(&doc.doc_parent_id)
+        .bind(&doc.attente)
         .bind(&doc.id)
         .execute(&mut *tx)
         .await
@@ -76,11 +84,11 @@ pub async fn store_document(
             INSERT INTO ligne_documents (
                 id, document_id, article_id, prix_achat_ttc, prix_vente_ttc, 
                 qte, qte_mvt_stock, montant_ttc, montant_net, 
-                montant_remise
+                montant_remise, qte_last_stock
             ) 
             VALUES (
                 $1, $2, $3, $4, $5,
-                $6, $7, $8, $9, $10
+                $6, $7, $8, $9, $10, $11
             )
             "#,
             lig.id,
@@ -92,7 +100,8 @@ pub async fn store_document(
             lig.qte_mvt_stock,
             lig.montant_ttc,
             lig.montant_net,
-            lig.montant_remise
+            lig.montant_remise,
+            lig.qte_last_stock
         )
         .execute(&mut *tx)
         .await
@@ -123,7 +132,7 @@ pub async fn store_document(
         $6, $7::date, $8, $9, $10, $11
         )
         "#;
-        
+
         sqlx::query(query_reg)
             .bind(&reg.id)
             .bind(&reg.user_id)
@@ -139,7 +148,6 @@ pub async fn store_document(
             .execute(&mut *tx)
             .await
             .map_err(|e| AppError::SqlxError(e))?;
-        
 
         let reg_doc_id = Uuid::new_v4().to_string();
         let rd_query = r#"
@@ -189,3 +197,169 @@ pub async fn delete_ligne_doc(pool: &PgPool, doc_id: &str) -> Result<bool, AppEr
 
     Ok(row_affect.rows_affected() > 0)
 }
+
+// -----------------------------stock functions-----------------------------
+pub async fn stock_get(
+    State(pool): State<PgPool>,
+    Query(params): Query<StockParam>,
+) -> Result<impl IntoResponse, AppError> {
+    let mut query = String::from(
+        r#"
+        SELECT 
+        docs.id,type_doc, document_num, document_date, depot_id,
+         montant_total,montant_net, qte_total, doc_fils_id
+        FROM documents docs
+        LEFT JOIN (
+            SELECT document_id, SUM(qte) AS qte_total
+            FROM ligne_documents
+            GROUP BY document_id
+        ) AS lignes ON docs.id = lignes.document_id
+        WHERE type_doc=$1
+        
+    "#,
+    );
+    // date filter
+    let mut idx = 2;
+    let search_clean = params.search.as_ref().and_then(|s| {
+        let s = s.trim();
+        if s.is_empty() {
+            None
+        } else {
+            Some(format!("%{}%", s))
+        }
+    });
+    if params.date_start.is_some() {
+        query += &format!(" AND document_date >= ${} ", idx);
+        idx += 1;
+    }
+    if params.date_end.is_some() {
+        query += &format!(" AND document_date <= ${} ", idx);
+        idx += 1;
+    }
+    if search_clean.is_some() {
+        query += &format!(" AND (document_num ILIKE ${} ) ", idx);
+        idx += 1;
+    }
+    query += &format!(
+        " ORDER BY document_date DESC LIMIT ${} OFFSET ${} ",
+        idx + 1,
+        idx
+    );
+
+    let mut query_ex = sqlx::query_as::<_, StockList>(&query);
+    query_ex = query_ex.bind(params.type_doc);
+
+    if let Some(date_start) = params.date_start {
+        query_ex = query_ex.bind(date_start);
+    }
+    if let Some(date_end) = params.date_end {
+        query_ex = query_ex.bind(date_end);
+    }
+    if let Some(search) = search_clean {
+        let pattern = format!("%{}%", search);
+        query_ex = query_ex.bind(pattern);
+    }
+    query_ex = query_ex.bind(params.offset).bind(params.limit);
+
+    let stock_docs: Vec<StockList> = query_ex
+        .fetch_all(&pool)
+        .await
+        .map_err(AppError::SqlxError)?;
+
+    Ok((StatusCode::OK, Json(stock_docs)))
+}
+// -----------------------------vente functions-----------------------------
+pub async fn doc_delete(
+    State(pool): State<PgPool>,
+    Json(param): Json<DeletePayload>,
+) -> Result<impl IntoResponse, AppError> {
+    let query = format!("
+        DELETE FROM {} 
+        WHERE id = $1",param.table_name);
+
+    let row_affect = sqlx::query(&query)
+        .bind(&param.table_id)
+        .execute(&pool)
+        .await
+        .map_err(AppError::SqlxError)?;
+
+    if row_affect.rows_affected() == 0 {
+        return Err(AppError::Internal("Document not found".to_string()));
+    }
+
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({
+            "statut":true,
+            "message":"Document supprimé avec succès"
+        })),
+    ))
+}
+// -----------------------------approuve stock-----------------------------
+
+pub async fn stock_ajuste(
+    State(pool): State<PgPool>,
+    Json(param): Json<ApprouveParam>
+) -> Result<impl IntoResponse, AppError> {
+    let mut tx = pool.begin().await.map_err(|e| AppError::SqlxError(e))?;  
+    let lignes =sqlx::query_as::<_, LigneResetStock>(r#"
+        SELECT article_id, qte, qte_last_stock
+        FROM ligne_documents
+        WHERE document_id = $1;    
+    "#)
+    .bind(&param.document_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(AppError::SqlxError)?;
+    for lig in lignes {
+        sqlx::query!(r#"
+        UPDATE articles SET 
+        stock = $1
+        WHERE id = $2
+        "#,
+        &lig.qte,   
+        &lig.article_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::SqlxError(e))?;
+    //reset qte_last_stock to qte
+        sqlx::query!(r#"
+        UPDATE ligne_documents SET 
+        qte_mvt_stock = qte_mvt_stock - $1 + $2
+        WHERE article_id = $3 AND document_id = $4
+        "#,
+        &lig.qte_last_stock,   
+        &lig.qte,
+        &lig.article_id,
+        &param.document_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::SqlxError(e))?;
+        
+    }
+    //approve the document reset
+     sqlx::query!(r#"
+        UPDATE documents SET 
+        doc_fils_id = $1
+        WHERE id = $2
+        "#,
+        &param.document_id,   
+        &param.document_id
+        )
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| AppError::SqlxError(e))?;
+
+    tx.commit().await.map_err(|e| AppError::SqlxError(e))?;
+
+    Ok((StatusCode::OK, Json(json!({
+        "statut":true,
+        "message":"Stock approuvé avec succès"
+    }))))
+   
+}
+
+

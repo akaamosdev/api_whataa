@@ -259,21 +259,36 @@ pub async fn create_compagny(
         .await
         .map_err(AppError::SqlxError)?;
 
+    let mut mode_ids: Vec<String> = vec![];
+
     //mode_paiements
-    let mode_query = r#"
-        INSERT INTO mode_paiements (
-            id, name, compagny_id
-        ) 
-        VALUES ($1,$2,$3)
-    "#;
-    let mode_paiement_id = Uuid::new_v4().to_string();
-    sqlx::query(mode_query)
-        .bind(&mode_paiement_id)
-        .bind("ESPECE")
-        .bind(&compagny_id)
-        .execute(&mut *tx)
-        .await
-        .map_err(AppError::SqlxError)?;
+    let mode_paiements=[
+        ("001","ESPECE"),
+        ("002","WAVE"),
+        ("003","ORANGE MONEY"),
+        ("003","MTN MONEY"),
+        ("003","MOOV MONEY"),
+        ("004","CARTE BANCAIRE"),
+        ("005","CHEQUE"),
+    ];
+    for (code,name) in mode_paiements {
+        let mode_query = r#"
+            INSERT INTO mode_paiements (
+                id,code, name, compagny_id
+            ) 
+            VALUES ($1,$2,$3,$4)
+        "#;
+        let mode_paiement_id = Uuid::new_v4().to_string();
+        sqlx::query(mode_query)
+            .bind(&mode_paiement_id)
+            .bind(code)
+            .bind(name)
+            .bind(&compagny_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(AppError::SqlxError)?;
+        mode_ids.push(mode_paiement_id);
+    }
 
     //type_depenses
     let depense_type_query = r#"
@@ -310,7 +325,7 @@ pub async fn create_compagny(
             "boutiqueId":&boutiq_id,
             "userId":&user.id,
             "caisse_id":&caisse_id,
-            "modePaimentID":&mode_paiement_id,
+            "modePaimentID":mode_ids[0],
             "userName":&user.name,
             "userRoleId":&user.role_id,
             "email":&payload.email,

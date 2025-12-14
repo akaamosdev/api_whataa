@@ -5,7 +5,7 @@ use axum::extract::{Path, Query};
 use axum::response::IntoResponse;
 use axum::{Json, extract::State, http::StatusCode};
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgPool, query};
 use uuid::Uuid;
 
 use crate::errors::AppError;
@@ -219,7 +219,7 @@ pub async fn article_update(
         })),
     ))
 }
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize,Debug)]
 pub struct ArticleSearchParams {
     pub name: Option<String>,
     pub code_bar: Option<String>,
@@ -263,7 +263,7 @@ pub async fn article_documents(
     } else {
         vec![] // aucun param → retourne vide
     };
-
+    
     Ok((StatusCode::OK, Json(documents)))
 }
 //

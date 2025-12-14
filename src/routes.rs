@@ -1,8 +1,8 @@
 use crate::handlers::{
-    auth::{get_all_users, get_data_default, login, register}, compagny_handler::{create_compagny, get_compagny, update_compagny}, document_handler::store_document, famille::{add_famille, delete_famille, get_familles, update_famille}, helpers::{get_last_counts, import_articles, upload_file}, mode_paiement::get_mode_paiement, product_handler::{article_add, article_by_id, article_check_stock, article_documents, article_paginates, article_update}, reglement_handler::{delete_regle, regle_client, store_reglement}, sous_famille::{
+    auth::{get_all_users, get_data_default, login, register}, caisse_handler::{caisse_get, mvt_caisse_get, mvt_caisse_store, store_caisse}, compagny_handler::{create_compagny, get_compagny, update_compagny}, depense_handler::{get_depenses, store_depense}, document_handler::{doc_delete, stock_ajuste, stock_get, store_document}, famille::{add_famille, delete_famille, get_familles, update_famille}, helpers::{get_last_counts, import_articles, upload_file}, mode_paiement::get_mode_paiement, product_handler::{article_add, article_by_id, article_check_stock, article_documents, article_paginates, article_update}, reglement_handler::{delete_regle, regle_client, store_reglement}, sous_famille::{
         sous_famille_add, sous_famille_delete, sous_famille_update, sous_familles_by_famille,
         sous_familles_get,
-    }, sync_handler::send_data, tier_handler::{tier_add, tier_paginates, tier_update}, user_handler::{all_tiers, check_database}, vente_handler::{vente_by_id, vente_get}
+    }, statistis_handler::statistis_handler, sync_handler::send_data, tier_handler::{tier_add, tier_paginates, tier_update}, user_handler::{all_tiers, check_database}, vente_handler::{doc_attente_lignes, documents_attente, vente_by_id, vente_get}
 };
 use axum::{
     Router,
@@ -36,10 +36,22 @@ pub fn create_router(pool: PgPool) -> Router {
     );
     let document_routes =
         Router::new().route("/", get(vente_get).post(store_document)
+        .delete(doc_delete)
         // .put(client_update)
     );
     let reglement_routes = Router::new().route("/", 
     get(regle_client).post(store_reglement).delete(delete_regle));
+
+    let stock_routes =
+        Router::new().route("/", get(stock_get).post(store_document)
+        // .put(client_update)
+    );
+    let depense_routes =
+        Router::new().route("/", get(get_depenses).post(store_depense));
+    let solde_caisse =
+        Router::new().route("/", get(caisse_get).post(store_caisse));
+     let mvt_caisse =
+        Router::new().route("/", get(mvt_caisse_get).post(mvt_caisse_store));
     // Router principal
     Router::new()
         .route("/check_database", post(check_database))
@@ -67,9 +79,18 @@ pub fn create_router(pool: PgPool) -> Router {
         .nest("/tiers", tier_routes)
         .nest("/documents", document_routes)
         .nest("/reglements", reglement_routes)
+        .nest("/stocks", stock_routes)
+        .nest("/depenses", depense_routes)
+        .nest("/caisses", solde_caisse)
+        .nest("/mouvements_caisses", mvt_caisse)
         //vente by id
         .route("/document/{doc_id}", get(vente_by_id))
         .route("/articles/doc", get(article_documents))
         .route("/articles/check/stock", post(article_check_stock))
+        .route("/stock/ajuste", post(stock_ajuste))
+        .route("/documents_attente", get(documents_attente))
+        .route("/documents_attente/lignes/{doc_id}", get(doc_attente_lignes))
+        .route("/statistic_data", get(statistis_handler))
+        
         .with_state(pool)
 }

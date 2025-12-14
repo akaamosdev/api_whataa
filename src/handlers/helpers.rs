@@ -12,7 +12,7 @@ use sqlx::PgPool;
 
 use axum_extra::extract::Multipart;
 use calamine::{DataType, RangeDeserializerBuilder, Reader, open_workbook_auto};
-use std::{fs::File, io::Cursor, vec};
+use std::{fs::File, io::Cursor, ptr::null, vec};
 use uuid::Uuid;
 
 use crate::{
@@ -230,7 +230,7 @@ pub async fn import_articles(
             price_buy: row.get(4).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
             price_seller: row.get(5).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
             stock: row.get(6).and_then(|c| c.as_f64()).map(|v| v as f32).unwrap_or(0.0),
-            doc_defaut_id: "".to_string(),
+            doc_defaut_id:"".to_string(),
             depot_defaut_id: None,
             user_id: None,
         };
@@ -306,6 +306,7 @@ pub async fn import_articles(
                 montant_ttc: article.price_buy * article.stock,
                 montant_net: article.price_buy * article.stock,
                 montant_remise: 0.0,
+                qte_last_stock: 0.0,
                 
             };
             sqlx::query!(

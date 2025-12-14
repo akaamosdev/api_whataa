@@ -8,3 +8,5 @@ pub mod ligne_document;
 pub mod reglement;
 pub mod reglement_document;
 pub mod mode_paiement;
+pub mod depense;
+pub mod caisse;

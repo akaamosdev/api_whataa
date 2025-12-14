@@ -18,8 +18,23 @@ pub async fn tier_paginates(
     let mut sqlc = format!(
         "
     SELECT 
-    fou.*, CAST (0.0 AS FLOAT4) AS solde
+    fou.*, COALESCE(regle.total_regle, 0) - COALESCE(vente.total_doc, 0) AS solde
     FROM Tiers fou
+    LEFT JOIN (
+        SELECT 
+        tier_id, 
+        SUM(montant) AS total_regle
+        FROM reglements
+        GROUP BY tier_id
+    ) AS regle ON fou.id = regle.tier_id
+    LEFT JOIN (
+        SELECT 
+        tier_id, 
+        SUM(montant_net) AS total_doc
+        FROM documents
+        WHERE (type_doc = 1 OR type_doc = 2)
+        GROUP BY tier_id
+    ) AS vente ON fou.id = vente.tier_id
     WHERE type_tier= $1
     "
     );

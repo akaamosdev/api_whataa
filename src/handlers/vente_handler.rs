@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{ FromRow, PgPool};
 
-use crate::{errors::AppError, models::{document::{Document, DocumentEdit, LigneEdit}, helper_model::PaginateDocument}};
+use crate::{errors::AppError, models::{document::{Document, DocumentAttente, DocumentEdit, LigneAttente, LigneEdit}, helper_model::PaginateDocument}};
 
 #[derive(Deserialize,FromRow,Serialize)]
 pub struct VenteShow{
@@ -38,7 +38,6 @@ pub async fn vente_get(
         FROM documents d
         INNER JOIN tiers ts ON ts.id = d.tier_id
         LEFT JOIN documents AS doc_fs ON doc_fs.doc_parent_id = d.id
-        LEFT JOIN reglement_documents rd ON rd.document_id = d.id
         LEFT JOIN (
             SELECT document_id, SUM(montant) AS t_rd
             FROM reglement_documents
@@ -129,14 +128,20 @@ pub async fn vente_by_id(
         docs.id,type_doc, document_num, document_date, depot_id,
         montant_tva, montant_ht, montant_total,
         montant_net, montant_remise, tier_id,taux_remise, doc_parent_id,
-        denomination,address_mail,phone_mobil,phone_fix, type_tier, COALESCE(rg_docs.paye,0) AS paye
+        denomination,address_mail,phone_mobil,phone_fix, type_tier, COALESCE(rg_docs.paye,0) AS paye,
+        COALESCE(lignes.qte_total,0) AS qte_total
         FROM documents docs
-        INNER JOIN tiers ts ON ts.id=tier_id
+        LEFT JOIN tiers ts ON ts.id=tier_id
+        LEFT JOIN (
+        SELECT document_id, SUM(qte) AS qte_total
+        FROM ligne_documents
+        GROUP BY document_id
+        ) AS lignes ON docs.id = lignes.document_id
         LEFT JOIN (
             SELECT SUM(montant) AS paye, document_id FROM reglement_documents
             GROUP BY document_id
         ) AS rg_docs ON rg_docs.document_id=docs.id
-        WHERE docs.id = $1 LIMIT 1
+        WHERE docs.id = $1
     "#;
 
     let vente_doc: DocumentEdit = sqlx::query_as::<_, DocumentEdit>(&query)
@@ -170,4 +175,50 @@ pub async fn vente_by_id(
     // println!("{:?}",datas);
 
     Ok((StatusCode::OK, Json(datas)))
+}
+
+pub async fn documents_attente(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, AppError> {
+    let query = r#"
+        SELECT id, document_num, document_date, montant_net,
+               COALESCE(lignes.nb_articles, 0) AS nb_articles
+        FROM documents
+        LEFT JOIN (
+            SELECT document_id, SUM(qte) AS nb_articles
+            FROM ligne_documents
+            GROUP BY document_id
+        ) AS lignes ON documents.id = lignes.document_id
+        WHERE attente = true
+    "#;
+
+    let ventes: Vec<DocumentAttente> = sqlx::query_as::<_, DocumentAttente>(&query)
+        .fetch_all(&pool)
+        .await
+        .map_err(AppError::SqlxError)?;
+
+    Ok((StatusCode::OK, Json(ventes)))
+}
+// -- ligne_document.rs  restore--
+pub async fn doc_attente_lignes(
+    State(pool): State<PgPool>,
+    Path(doc_id): Path<String>,
+) -> Result<impl IntoResponse, AppError> {
+    let query = r#"
+        SELECT
+        document_id, article_id, art.name AS designation, 
+        qte, prix_achat_ttc, prix_vente_ttc,
+        montant_remise, montant_net, stock
+        FROM ligne_documents lgs
+        INNER JOIN articles art ON art.id=lgs.article_id
+        WHERE document_id = $1
+    "#;
+
+    let lignes: Vec<LigneAttente> = sqlx::query_as::<_, LigneAttente>(&query)
+        .bind(&doc_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(AppError::SqlxError)?;
+
+    Ok((StatusCode::OK, Json(json!({"lignes":lignes}))))
 }

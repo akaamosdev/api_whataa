@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use serde::Deserialize;
 
 
@@ -21,10 +22,14 @@ pub struct PaginateDocument {
 
 }
 
-#[derive(Deserialize)]
+#[derive(Debug,Deserialize)]
 pub struct PaginateReglement {
-    pub offset: Option<i64>,
+    pub offset: i64,
     pub search: Option<String>,
+    pub type_tier: String,
+    pub limit: i64,
+    pub date_start: Option<NaiveDate>,
+    pub date_end: Option<NaiveDate>,
 }
 
 

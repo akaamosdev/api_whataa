@@ -6,99 +6,66 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{PgPool, prelude::FromRow};
+use sqlx::{PgPool, QueryBuilder};
 use sqlx::{Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{
     errors::AppError,
     models::{
-        helper_model::{PaginateDocument, PaginateReglement},
-        reglement,
+        helper_model::PaginateReglement,
+        reglement::{ReglementData, ReglementDetail},
     },
 };
-#[derive(Serialize, FromRow)]
-pub struct DocReste {
-    doc_id: String,
-    reste: f64,
-}
-
-#[derive(Serialize, FromRow)]
-pub struct ReglementDetail {
-    id: String,
-    reglement_num: String,
-    reglement_date: String,
-    montant: f64,
-    denomination: String,
-    caisse: String,
-    mode_pay: String,
-    client_id: String,
-    caisse_id: String,
-    mode_paiement_id: String,
-    commentaire: String,
-    reference: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, FromRow)]
-pub struct ReglementData {
-    id: String,
-    user_id: String,
-    reglement_num: String,
-    reglement_date: String,
-    montant: f32,
-    boutique_id: String,
-    caisse_id: String,
-    tier_id: String,
-    mode_paiement_id: String,
-    commentaire: String,
-    reference: String,
-    is_edit: Option<bool>,
-}
 
 pub async fn regle_client(
     State(pool): State<PgPool>,
     Query(params): Query<PaginateReglement>,
 ) -> Result<impl IntoResponse, AppError> {
-    let offset = params.offset.unwrap_or(0);
-    let mut sqlc = String::from(
+    let offset = params.offset;
+
+    let mut query_b = QueryBuilder::<Postgres>::new(
         "SELECT reglements.id, reglement_num, reglement_date,
-        montant,clients.denomination, caisses.name AS caisse,
-        mode_paiements.name AS mode_pay, mode_paiement_id, client_id, caisse_id,
+        montant,denomination, caisses.name AS caisse,
+        mode_paiements.name AS mode_pay, mode_paiement_id, tier_id, caisse_id,
         commentaire, reference
         FROM reglements 
-        INNER JOIN clients ON clients.id=reglements.client_id
+        INNER JOIN tiers ON tiers.id=reglements.tier_id
         INNER JOIN caisses ON reglements.caisse_id=caisses.id
         INNER JOIN mode_paiements ON reglements.mode_paiement_id=mode_paiements.id
-        ",
+        WHERE tiers.type_tier = ",
     );
-    let search_pattern = params.search.as_ref().map(|s| format!("%{}%", s));
-    if search_pattern.is_some() {
-        sqlc.push_str(
-            " AND (reglement_num LIKE ? 
-                   OR reglement_date LIKE ? 
-                   OR denomination LIKE ? 
-                   OR montant LIKE ?) ",
-        );
+    query_b.push_bind(&params.type_tier);
+    if let Some(search) = &params.search {
+        let search_pattern = format!("%{}%", search);
+        query_b.push(" AND (reglement_num ILIKE ");
+        query_b.push_bind(search_pattern.clone());
+        query_b.push(" OR denomination ILIKE ");
+        query_b.push_bind(search_pattern.clone());
+        query_b.push(" OR montant::text ILIKE ");
+        query_b.push_bind(search_pattern);
+        query_b.push(")");
     }
-    sqlc.push_str(
-        "
-    GROUP BY reglements.id ORDER BY reglements.reglement_num DESC LIMIT 25 OFFSET ?
-    ",
-    );
+    if let Some(date_start) = &params.date_start {
+        query_b.push(" AND reglement_date >= ");
+        query_b.push_bind(date_start);
+    }
+    if let Some(date_end) = &params.date_end {
+        query_b.push(" AND reglement_date <= ");
+        query_b.push_bind(date_end);
+    }
 
-    let mut query = sqlx::query_as::<_, ReglementDetail>(&sqlc);
-    if let Some(ref pattern) = search_pattern {
-        query = query
-            .bind(pattern)
-            .bind(pattern)
-            .bind(pattern)
-            .bind(pattern)
-    }
-    query = query.bind(offset);
-    let regles: Vec<ReglementDetail> = query
+    query_b.push(" ORDER BY reglements.reglement_num DESC LIMIT ");
+    query_b.push_bind(params.limit);
+    query_b.push(" OFFSET ");
+    query_b.push_bind(offset);
+
+    let regles: Vec<ReglementDetail> = query_b
+        .build_query_as()
         .fetch_all(&pool)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
+
     Ok((StatusCode::OK, Json(regles)))
 }
 
@@ -145,7 +112,7 @@ pub async fn store_reglement(
     get_docs_client(&pool, &regle.tier_id, &regle.id, regle.montant).await?;
 
     Ok((
-        StatusCode::CREATED ,
+        StatusCode::CREATED,
         Json(json!({
             "statut": true
         })),
@@ -230,7 +197,8 @@ async fn get_docs_client(
 }
 #[derive(Deserialize)]
 pub struct DeletePayload {
-    pub regle_id: String,
+    pub table_id: String,
+    pub table_name: String,
 }
 // delete regle
 pub async fn delete_regle(
@@ -241,7 +209,7 @@ pub async fn delete_regle(
     DELETE FROM reglement_documents WHERE reglement_id=$1
     ";
     sqlx::query(query)
-        .bind(&playbod.regle_id)
+        .bind(&playbod.table_id)
         .execute(&pool)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -250,7 +218,7 @@ pub async fn delete_regle(
     DELETE FROM reglements WHERE id=$1
     ";
     sqlx::query(query_c)
-        .bind(&playbod.regle_id)
+        .bind(&playbod.table_id)
         .execute(&pool)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;

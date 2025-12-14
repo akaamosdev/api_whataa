@@ -9,7 +9,7 @@ use crate::models::reglement::Reglement;
 pub struct DocumentDto {
     pub id: String,
     pub user_id: String,
-    pub tier_id: String,
+    pub tier_id: Option<String>,
     pub document_num: String,
     pub type_doc: i32,
     pub montant_net: f64,
@@ -24,6 +24,7 @@ pub struct DocumentDto {
     pub commentaire: String,
     pub montant_client: f64,
     pub montant_total: f64,
+    pub attente: Option<bool>,
     pub lignes: Vec<LigneDocumentDto>, // on ajoute les lignes directement
     pub reglement: Option<Reglement>,
     pub is_edit: Option<bool>,
@@ -42,5 +43,12 @@ pub struct LigneDocumentDto {
     pub montant_ttc: f32,
     pub montant_net: f32,
     pub montant_remise: f32,
+    pub qte_last_stock: f32,
 }
-//
+//struct for rezet stock
+#[derive(Serialize,Deserialize,FromRow)]
+pub struct LigneResetStock{
+    pub article_id:String,
+    pub qte:f32,
+    pub qte_last_stock:f32,
+}
