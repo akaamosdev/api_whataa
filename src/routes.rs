@@ -1,5 +1,5 @@
 use crate::handlers::{
-    auth::{get_all_users, get_data_default, login, register}, caisse_handler::{caisse_get, mvt_caisse_get, mvt_caisse_store, store_caisse}, compagny_handler::{create_compagny, get_compagny, update_compagny}, depense_handler::{get_depenses, store_depense}, document_handler::{doc_delete, stock_ajuste, stock_get, store_document}, famille::{add_famille, delete_famille, get_familles, update_famille}, helpers::{get_last_counts, import_articles, upload_file}, mode_paiement::get_mode_paiement, product_handler::{article_add, article_by_id, article_check_stock, article_documents, article_paginates, article_update}, reglement_handler::{delete_regle, regle_client, store_reglement}, sous_famille::{
+    auth::{get_all_users, get_data_default, login, register}, caisse_handler::{caisse_get, mvt_caisse_get, mvt_caisse_store, store_caisse}, compagny_handler::{create_compagny, get_compagny, update_compagny}, depense_handler::{get_depenses, store_depense}, document_handler::{doc_delete, stock_ajuste, stock_get, store_document}, etat_vente_handler::{article_vente_achat, etat_creance_tier, etat_mvt_tier, etat_paiement_tier, etat_vente_by_client, vente_facture}, famille::{add_famille, delete_famille, get_familles, update_famille}, helpers::{get_last_counts, import_articles, upload_file}, mode_paiement::get_mode_paiement, product_handler::{article_add, article_by_id, article_check_stock, article_documents, article_paginates, article_update}, reglement_handler::{delete_regle, regle_client, store_reglement}, sous_famille::{
         sous_famille_add, sous_famille_delete, sous_famille_update, sous_familles_by_famille,
         sous_familles_get,
     }, statistis_handler::statistis_handler, sync_handler::send_data, tier_handler::{tier_add, tier_paginates, tier_update}, user_handler::{all_tiers, check_database}, vente_handler::{doc_attente_lignes, documents_attente, vente_by_id, vente_get}
@@ -91,6 +91,12 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/documents_attente", get(documents_attente))
         .route("/documents_attente/lignes/{doc_id}", get(doc_attente_lignes))
         .route("/statistic_data", get(statistis_handler))
+        .route("/etat/vente/facture", get(vente_facture))
+        .route("/etat/vente/article", get(article_vente_achat))
+        .route("/etat/vente/tier", get(etat_vente_by_client))
+        .route("/etat/paiement/tier", get(etat_paiement_tier))
+        .route("/etat/creance/tier", get(etat_creance_tier))
+        .route("/etat/mouvement/tier", get(etat_mvt_tier))
         
         .with_state(pool)
 }

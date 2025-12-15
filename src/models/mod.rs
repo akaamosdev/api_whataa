@@ -10,3 +10,4 @@ pub mod reglement_document;
 pub mod mode_paiement;
 pub mod depense;
 pub mod caisse;
+pub mod etats;

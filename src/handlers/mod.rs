@@ -17,3 +17,4 @@ pub mod sync_handler;
 pub mod depense_handler;
 pub mod caisse_handler;
 pub mod statistis_handler;
+pub mod etat_vente_handler;
