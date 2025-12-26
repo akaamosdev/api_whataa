@@ -7,11 +7,11 @@ use axum::{
 use serde_json::{ json};
 use sqlx::{PgPool};
 
-use crate::{errors::AppError, models::etats::{ArticleVenteAchat, EtatCreanceTier, EtatMvtTier, EtatReglementTier, EtatVenteCumuled, ParamsEtatDoc, VenteFacture}};
+use crate::{errors::AppError, models::{etats::{ArticleVenteAchat, EtatCreanceTier, EtatMvtTier, EtatReglementTier, EtatVenteCumuled, ParamsEtatDoc, VenteFacture}, tier}};
 
 
 
-pub async fn vente_facture(
+pub async fn etat_vente_facture(
     State(pool): State<PgPool>,
     Query(params): Query<ParamsEtatDoc>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -49,13 +49,14 @@ pub async fn vente_facture(
     INNER JOIN articles a ON a.id = l.article_id
     INNER JOIN unites u ON u.id = a.unite_id
     INNER JOIN tiers t ON t.id = d.tier_id
-    WHERE d.type_doc = 2 AND (NULLIF($1, '') IS NULL OR d.tier_id = $1) AND  document_date BETWEEN $2 AND $3 
+    WHERE d.type_doc = $4 AND (NULLIF($1, '') IS NULL OR d.tier_id = $1) AND  document_date BETWEEN $2 AND $3 
     
     GROUP BY d.id, t.denomination
         "#,
         params.tier_id,
         params.date_start,
         params.date_end,
+        params.type_doc
     )
     .fetch_all(&pool)
     .await
@@ -117,22 +118,27 @@ pub async fn etat_vente_by_client(State(pool): State<PgPool>,
         d.montant_net
     FROM documents d
     INNER JOIN tiers t ON t.id = d.tier_id
-    WHERE d.type_doc = 2 AND (NULLIF($1, '') IS NULL OR d.tier_id = $1) AND  document_date BETWEEN $2 AND $3 
+    WHERE d.type_doc = $4 AND (NULLIF($1, '') IS NULL OR d.tier_id = $1) AND  document_date BETWEEN $2 AND $3 
         "#,
         params.tier_id,
         params.date_start,
         params.date_end,
+        params.type_doc
     )
     .fetch_all(&pool)
     .await
     .map_err(AppError::SqlxError)?;
-
 
     Ok((StatusCode::OK, Json(json!({ "datas": data}))))
 }
 pub async fn etat_paiement_tier(State(pool): State<PgPool>,
     Query(params): Query<ParamsEtatDoc>,
 ) -> Result<impl IntoResponse, AppError> {
+    let type_tier = if params.type_doc == 2 {
+    "CLIENT"
+} else {
+    "FOURNISSEUR"
+};
     let data: Vec<_> = sqlx::query_as!(
         EtatReglementTier,
         r#"
@@ -146,22 +152,24 @@ pub async fn etat_paiement_tier(State(pool): State<PgPool>,
     FROM reglements r
     INNER JOIN tiers t ON t.id = r.tier_id
     INNER JOIN mode_paiements mp ON mp.id = r.mode_paiement_id
-    WHERE (NULLIF($1, '') IS NULL OR r.tier_id = $1) AND  r.reglement_date::text BETWEEN $2 AND $3 
+    WHERE t.type_tier = $4 AND (NULLIF($1, '') IS NULL OR r.tier_id = $1) AND  r.reglement_date::text BETWEEN $2 AND $3 
         "#,
         params.tier_id,
         params.date_start,
         params.date_end,
+        type_tier
     )
     .fetch_all(&pool)
     .await
     .map_err(AppError::SqlxError)?;
 
-
+println!("Params: {:?}", params);
     Ok((StatusCode::OK, Json(json!({ "datas": data}))))
 }
 pub async fn etat_creance_tier(State(pool): State<PgPool>,
     Query(params): Query<ParamsEtatDoc>,
 ) -> Result<impl IntoResponse, AppError> {
+    
     let data: Vec<_> = sqlx::query_as!(
         EtatCreanceTier,
         r#"
@@ -171,10 +179,17 @@ pub async fn etat_creance_tier(State(pool): State<PgPool>,
         COALESCE(SUM(r.montant),0) AS total_regle,
         COALESCE(SUM(d.montant_net),0)-COALESCE(SUM(r.montant),0) AS solde
     FROM tiers t
-    LEFT JOIN reglements r ON t.id = r.tier_id
-    LEFT JOIN documents d ON d.tier_id = t.id 
-    WHERE (NULLIF($1, '') IS NULL OR r.tier_id = $1) AND d.type_doc = $2
-    GROUP BY t.id, t.code, t.denomination, t.phone_mobil
+    LEFT JOIN (
+        SELECT tier_id, SUM(montant) AS montant FROM reglements r
+        WHERE (NULLIF($1, '') IS NULL OR r.tier_id = $1)
+        GROUP BY tier_id
+    ) r ON r.tier_id = t.id
+    LEFT JOIN (
+        SELECT tier_id, SUM(montant_net) AS montant_net FROM documents d
+        WHERE d.type_doc = $2 AND (NULLIF($1, '') IS NULL OR d.tier_id = $1) 
+        GROUP BY tier_id
+    ) d ON d.tier_id = t.id
+    GROUP BY t.id
     HAVING COALESCE(SUM(d.montant_net),0)-COALESCE(SUM(r.montant),0) > 0
     ORDER BY solde DESC
         "#,

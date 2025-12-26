@@ -112,13 +112,14 @@ pub async fn create_compagny(
         password_hash,
         name: payload.username,
         role_id: 1,
-        boutique_id: String::new(),
+        phone: payload.phone,
+        boutique_id: boutiq_id.clone(),
     };
 
     sqlx::query(
         "INSERT INTO users (id, email, 
-        password_hash,name,role_id,boutique_id) 
-        VALUES ($1, $2, $3, $4, $5, $6)",
+        password_hash,name,role_id,boutique_id, phone) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(&user.id)
     .bind(&user.email)
@@ -126,6 +127,7 @@ pub async fn create_compagny(
     .bind(&user.name)
     .bind(&user.role_id)
     .bind(&boutiq_id)
+    .bind(&user.phone)
     .execute(&mut *tx)
     .await
     .map_err(|e| AppError::Internal(e.to_string()))?;
@@ -201,7 +203,7 @@ pub async fn create_compagny(
     sqlx::query(sous_fami_query)
         .bind(&sous_fami_id)
         .bind("SF0001")
-        .bind("Sous Famille Defaut")
+        .bind("Sous Famille")
         .bind(&fami_id)
         .execute(&mut *tx)
         .await

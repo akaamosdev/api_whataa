@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{
     errors::AppError,
-    handlers::reglement_handler::{DeletePayload, get_regle_no_user},
+    handlers::reglement_handler::{DeletePayload, RegleDocAuto, get_regle_no_user},
     models::{
         document::{ ApprouveParam, StockList, StockParam},
         ligne_document::{DocumentDto, LigneResetStock},
@@ -166,11 +166,13 @@ pub async fn store_document(
             .await
             .map_err(|e| AppError::SqlxError(e))?;
     }
-    // if doc.doc_parent_id.is_some() {
-    //     sqlx::query!(r#"
-    //     UPDATE documents SET doc
-    //     "#)
-    // }
+    if doc.is_edit.is_none()&&(doc.type_doc==2||doc.type_doc==1) {
+        get_regle_no_user(&mut tx, RegleDocAuto{
+            document_id: doc.id,
+            tier_id: doc.tier_id.clone().unwrap_or_default(),
+            montant_doc: doc.montant_net
+        }).await?;
+    }
 
     tx.commit().await.map_err(|e| AppError::SqlxError(e))?;
 

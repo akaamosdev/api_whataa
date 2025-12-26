@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::errors::AppError;
 
-#[derive(Debug, Deserialize)]
+#[derive(Deserialize)]
 pub struct SendDataDto {
     pub user_id: String,
     pub table: String,

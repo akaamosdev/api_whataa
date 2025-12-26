@@ -55,7 +55,7 @@ pub async fn regle_client(
         query_b.push_bind(date_end);
     }
 
-    query_b.push(" ORDER BY reglements.reglement_num DESC LIMIT ");
+    query_b.push(" ORDER BY reglements.created_at DESC LIMIT ");
     query_b.push_bind(params.limit);
     query_b.push(" OFFSET ");
     query_b.push_bind(offset);
@@ -225,21 +225,18 @@ pub async fn delete_regle(
 
     Ok((StatusCode::OK))
 }
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 pub struct RegleDocAuto {
-    client_id: Option<String>,
-    fournisseur_id: Option<String>,
-    document_id: String,
-    montant_doc: f64,
+    pub tier_id: String,
+    pub document_id: String,
+    pub montant_doc: f32,
 }
 
 pub async fn get_regle_no_user(
-    State(pool): State<PgPool>,
-    Json(playbod): Json<RegleDocAuto>,
+     tx: &mut sqlx::Transaction<'_, Postgres>,
+    playbod: RegleDocAuto,
 ) -> Result<(), AppError> {
     let mut montant_net = playbod.montant_doc;
-    let mut client_id = String::new();
-    let mut fournisseur_id = String::new();
     let mut payments_sql = String::from(
         "
         SELECT r.id AS reglement_id,
@@ -250,29 +247,17 @@ pub async fn get_regle_no_user(
             FROM reglement_documents
             GROUP BY reglement_id
         ) rd ON rd.reglement_id = r.id
-        WHERE (r.montant - COALESCE(rd.montant_alloue, 0)) > 0
+        WHERE (r.montant - COALESCE(rd.montant_alloue, 0)) > 0 AND r.tier_id=$1
         
     ",
     );
 
-    if let Some(client) = playbod.client_id {
-        client_id = client;
-        payments_sql.push_str(" AND r.client_id = ?");
-    }
-    if let Some(fournisseur) = playbod.fournisseur_id {
-        fournisseur_id = fournisseur;
-        payments_sql.push_str(" AND r.fournisseur_id = ?");
-    }
-
     payments_sql.push_str("ORDER BY r.reglement_date ASC");
-    let mut regle_nos = sqlx::query_as::<_, (String, f64)>(&payments_sql);
-
-    if !client_id.is_empty() {
-        regle_nos = regle_nos.bind(client_id);
-    }
+    let regle_nos = sqlx::query_as::<_, (String, f32)>(
+        &payments_sql).bind(&playbod.tier_id);
     //
     let regles = regle_nos
-        .fetch_all(&pool)
+        .fetch_all(&mut **tx)
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 
@@ -288,7 +273,8 @@ pub async fn get_regle_no_user(
         };
 
         sqlx::query(
-            "INSERT INTO reglement_documents (id, reglement_id, document_id, montant)
+            "INSERT INTO reglement_documents (
+            id, reglement_id, document_id, montant)
              VALUES ($1, $2, $3, $4)",
         )
         .bind(Uuid::new_v4().to_string())
@@ -296,8 +282,7 @@ pub async fn get_regle_no_user(
         .bind(&playbod.document_id)
         .bind(montant_regle)
         // either of these two forms is fine:
-        .execute(&pool) // explicit: &mut *tx
-        //.execute(tx)      // or just pass tx (a &mut Transaction)
+        .execute(&mut **tx) // explicit: &mut *tx
         .await
         .map_err(|e| AppError::Internal(e.to_string()))?;
 

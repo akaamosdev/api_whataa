@@ -12,7 +12,7 @@ pub struct DocumentDto {
     pub tier_id: Option<String>,
     pub document_num: String,
     pub type_doc: i32,
-    pub montant_net: f64,
+    pub montant_net: f32,
     pub montant_ht: f64,
     pub taux_remise: f64,
     pub montant_remise: f64,

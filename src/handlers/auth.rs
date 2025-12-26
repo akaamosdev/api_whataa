@@ -1,14 +1,19 @@
-use std::vec;
+use std::collections::HashMap;
 
+use argon2::password_hash::rand_core::le;
 use argon2::password_hash::{PasswordHash, SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHasher, PasswordVerifier};
+use axum::http::StatusCode;
+use axum::response::IntoResponse;
 use axum::{Json, extract::State};
-use chrono::Utc;
+use calamine::Table;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use sqlx::PgPool;
 use sqlx::prelude::FromRow;
 use uuid::Uuid;
 
+use crate::models::user::UserLogin;
 use crate::{auth::generate_token, errors::AppError, models::user::User};
 
 #[derive(Deserialize)]
@@ -16,8 +21,9 @@ pub struct RegisterInput {
     pub email: String,
     pub password: String,
     pub name: String,
-    pub role_id: i64,
+    pub role_id: i32,
     pub boutique_id: String,
+    pub phone: String,
 }
 
 pub async fn register(
@@ -39,6 +45,7 @@ pub async fn register(
         email: payload.email.clone(),
         password_hash,
         name: payload.name,
+        phone: payload.phone,
         role_id: payload.role_id,
         boutique_id: payload.boutique_id,
     };
@@ -68,27 +75,21 @@ pub async fn register(
     Ok(Json(user))
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize,Debug)]
 pub struct LoginInput {
-    pub email: String,
+    pub name: String,
     pub password: String,
-}
-#[derive(serde::Serialize)]
-pub struct LoginResponse {
-    pub token: String,
-    pub user: User,
-    pub privileges: Vec<String>,
 }
 
 pub async fn login(
     State(pool): State<PgPool>,
     Json(payload): Json<LoginInput>,
-) -> Result<Json<LoginResponse>, AppError> {
-    let user: User = sqlx::query_as("SELECT * FROM users WHERE email = ?")
-        .bind(&payload.email)
+) -> Result<impl IntoResponse, AppError> {
+    let user: UserLogin = sqlx::query_as("SELECT * FROM users WHERE LOWER(name) = LOWER($1)")
+        .bind(&payload.name)
         .fetch_one(&pool)
         .await
-        .map_err(|_| AppError::Unauthorized)?;
+        .map_err(|e| AppError::SqlxError(e))?;
 
     let argon2 = Argon2::default();
     let parsed_hash = PasswordHash::new(&user.password_hash).map_err(|_| AppError::Unauthorized)?;
@@ -98,40 +99,49 @@ pub async fn login(
         .is_ok()
     {
         let token = generate_token(&user.id, "supersecretkeychangeit");
-        let privileges: Vec<String> = sqlx::query_scalar(
-            "SELECT p.name FROM permissions p
-             JOIN permission_role pr ON p.id = pr.permission_id
-             JOIN role_user ur ON pr.role_id = ur.role_id
-             WHERE ur.user_id = ?",
+        let privileges: Vec<i32> = sqlx::query_scalar(
+            "SELECT permission_id FROM permission_role
+             WHERE role_id = $1",
         )
-        .bind(&user.id)
+        .bind(&user.role_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| AppError::SqlxError(e))?;
-        Ok(Json(LoginResponse {
-            token,
-            user,
-            privileges,
-        }))
+
+        let tables_defauts = [
+            "unites",
+            "depots",
+            "marques",
+            "sous_familles",
+            "caisses",
+            "mode_paiements",
+            "compagnies",
+            "boutiques",
+        ];
+        let mut default_ids: HashMap<String, String> = HashMap::new();
+        for tab in tables_defauts  {
+            let ids: String = sqlx::query_scalar(
+                format!("SELECT id FROM {} LIMIT 1", tab).as_str(),
+            )
+            .fetch_one(&pool)
+            .await
+            .map_err(AppError::SqlxError)?;
+            default_ids.insert(tab.to_string(), ids);
+            
+        }
+        Ok((
+            StatusCode::OK,
+            Json(json!({
+                "token": token,
+                "user": user,
+                "privileges": privileges,
+                "default_ids": default_ids,
+            })),
+        ))
     } else {
-        Err(AppError::Unauthorized)
+        println!("Invalid password for user: {}", payload.name);
+        Ok((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid credentials"}))))
     }
-}
-
-pub async fn get_all_users(State(pool): State<PgPool>) -> Result<Json<Vec<User>>, AppError> {
-    let users = sqlx::query_as::<_, User>(
-        "SELECT id, name, role_id, boutique_id, email, password_hash, created_at FROM users",
-    )
-    .fetch_all(&pool)
-    .await
-    .map_err(AppError::from)?;
-
-    Ok(Json(users))
-}
-//create
-pub struct UserCreate {
-    pub email: String,
-    pub password: String,
 }
 
 #[derive(Serialize)]
@@ -142,18 +152,16 @@ pub struct DefaultData {
     sous_famille_id: String,
     caisse_id: String,
     mode_paiment_id: String,
-    compagnies: CompagnieInfos
+    compagnies: CompagnieInfos,
 }
-#[derive(FromRow,Debug,Serialize)]
-pub struct CompagnieInfos{
+#[derive(FromRow, Debug, Serialize)]
+pub struct CompagnieInfos {
     id: String,
     taux_tva: i8,
-    taux_airsi: i8
+    taux_airsi: i8,
 }
 
-pub async fn get_data_default(
-    State(pool): State<PgPool>,
-) -> Result<Json<DefaultData>, AppError> {
+pub async fn get_data_default(State(pool): State<PgPool>) -> Result<Json<DefaultData>, AppError> {
     // fetch one default value for each table
     let unite_id: String = sqlx::query_scalar("SELECT id FROM unites LIMIT 1")
         .fetch_one(&pool)
@@ -184,11 +192,12 @@ pub async fn get_data_default(
         .fetch_one(&pool)
         .await
         .map_err(AppError::SqlxError)?;
-    let compagnies: CompagnieInfos =
-        sqlx::query_as::<_,CompagnieInfos>("SELECT id, taux_tva, taux_airsi FROM compagnies LIMIT 1")
-            .fetch_one(&pool)
-            .await
-            .map_err(AppError::SqlxError)?;
+    let compagnies: CompagnieInfos = sqlx::query_as::<_, CompagnieInfos>(
+        "SELECT id, taux_tva, taux_airsi FROM compagnies LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .map_err(AppError::SqlxError)?;
 
     let data = DefaultData {
         unite_id,
@@ -198,7 +207,6 @@ pub async fn get_data_default(
         caisse_id,
         mode_paiment_id,
         compagnies,
-
     };
 
     Ok(Json(data))

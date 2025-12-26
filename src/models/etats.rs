@@ -50,7 +50,7 @@ pub struct EtatReglementTier {
     pub mode_paiement: Option<String>,
     pub comment: Option<String>,
 }
-#[derive(Deserialize, FromRow, Serialize)]
+#[derive(Deserialize, FromRow, Serialize,Debug)]
 pub struct EtatCreanceTier {
     pub denomination: Option<String>,
     pub code: Option<String>,
@@ -66,4 +66,55 @@ pub struct EtatMvtTier{
     pub type_mvt: Option<String>,
     pub montant: Option<f32>,
     pub solde: Option<f32>,
+}
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct ChiffreAffaire {
+    pub date_mvt: Option<String>,
+    pub s_achat: Option<f32>,
+    pub s_vente: Option<f32>,
+    pub s_depense: Option<f32>,
+    pub marge: Option<f32>,
+}
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct MvtCompte {
+    pub date_mvt: Option<String>,
+    pub label: Option<String>,
+    pub debit: Option<f32>,
+    pub credit: Option<f32>,
+    pub solde: Option<f32>,
+}
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct MvtDepense {
+    pub date_depense: Option<String>,
+    pub comment: Option<String>,
+    pub montant: Option<f32>,
+    pub mode_paiement: Option<String>,
+}
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct ParamsTresorerie {
+    pub caisse_id: Option<String>,
+    pub date_start: String,
+    pub date_end: String,
+}
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct ShowStockArticle {
+    pub code_bar: Option<String>,
+    pub designation: Option<String>,
+    pub stock: Option<f32>,
+    pub prix_achat: Option<f32>,
+    pub prix_vente: Option<f32>,
+}
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct MvtStockArticle {
+    pub document_num: Option<String>,
+    pub document_date: Option<String>,
+    pub type_mvt: Option<String>,
+    pub qte_mvt_stock: Option<f32>,
+    pub stock: Option<f32>,
+}
+#[derive(Deserialize, FromRow, Serialize)]
+pub struct ParamsStockArticle {
+    pub article_id: Option<String>,
+    pub date_start: Option<String>,
+    pub date_end: Option<String>,
 }

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{ FromRow, PgPool};
 
-use crate::{errors::AppError, models::{document::{Document, DocumentAttente, DocumentEdit, LigneAttente, LigneEdit}, helper_model::PaginateDocument}};
+use crate::{errors::AppError, models::{document::{DocumentAttente, DocumentEdit, LigneAttente, LigneEdit}, helper_model::PaginateDocument}};
 
 #[derive(Deserialize,FromRow,Serialize)]
 pub struct VenteShow{

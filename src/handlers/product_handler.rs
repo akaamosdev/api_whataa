@@ -119,11 +119,11 @@ pub async fn article_add(
             let query = "
         INSERT INTO documents (
             document_num, tier_id, document_date, depot_id,
-            commentaire, type_doc, nombre_article, montant_ttc,
+            commentaire, type_doc, montant_total,
             montant_net, boutique_id, user_id, id
         )
         VALUES (
-            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11
         )
     ";
             doc_default_id = Uuid::new_v4().to_string();
@@ -134,7 +134,6 @@ pub async fn article_add(
                 .bind(&payload.depot_defaut_id.unwrap_or_default())
                 .bind("Initial stock document")
                 .bind(31) // assuming 2 is the type for stock initialization
-                .bind(1) // one article
                 .bind(&payload.price_seller)
                 .bind(&payload.price_seller)
                 .bind(&payload.boutique_id)
