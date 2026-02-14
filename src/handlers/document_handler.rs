@@ -4,9 +4,8 @@ use axum::{
     http::StatusCode,
     response::IntoResponse,
 };
-use chrono::NaiveDate;
 use serde_json::json;
-use sqlx::{Execute, PgPool};
+use sqlx::{PgPool};
 use uuid::Uuid;
 
 use crate::{

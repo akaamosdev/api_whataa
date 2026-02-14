@@ -2,13 +2,15 @@ use argon2::password_hash::{SaltString, rand_core::OsRng};
 use argon2::{Argon2, PasswordHasher};
 use axum::extract::Path;
 use axum::{Json, extract::State, http::StatusCode, response::IntoResponse};
-use chrono::{Local};
+use chrono::{DateTime, Local, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::{FromRow, PgPool};
+use tracing_subscriber::registry::Data;
 use uuid::Uuid;
 
 use crate::auth::generate_token;
+use crate::handlers::auth::{get_default_datas, get_privileges};
 use crate::models::compagnie::Compagny;
 use crate::{errors::AppError, models::user::User};
 
@@ -112,7 +114,7 @@ pub async fn create_compagny(
         password_hash,
         name: payload.username,
         role_id: 1,
-        phone: payload.phone,
+        phone: payload.phone.clone(),
         boutique_id: boutiq_id.clone(),
     };
 
@@ -264,16 +266,16 @@ pub async fn create_compagny(
     let mut mode_ids: Vec<String> = vec![];
 
     //mode_paiements
-    let mode_paiements=[
-        ("001","ESPECE"),
-        ("002","WAVE"),
-        ("003","ORANGE MONEY"),
-        ("003","MTN MONEY"),
-        ("003","MOOV MONEY"),
-        ("004","CARTE BANCAIRE"),
-        ("005","CHEQUE"),
+    let mode_paiements = [
+        ("001", "ESPECE"),
+        ("002", "WAVE"),
+        ("003", "ORANGE MONEY"),
+        ("003", "MTN MONEY"),
+        ("003", "MOOV MONEY"),
+        ("004", "CARTE BANCAIRE"),
+        ("005", "CHEQUE"),
     ];
-    for (code,name) in mode_paiements {
+    for (code, name) in mode_paiements {
         let mode_query = r#"
             INSERT INTO mode_paiements (
                 id,code, name, compagny_id
@@ -308,6 +310,27 @@ pub async fn create_compagny(
         .execute(&mut *tx)
         .await
         .map_err(AppError::SqlxError)?;
+    // abonnement
+    let date_end = Local::now() + chrono::Duration::days(7);
+    let date_start = Local::now();
+
+    sqlx::query!(
+        r#"
+        INSERT INTO abonnements ( 
+        key_licence,email_compagny,phone_compagny,nom_compagny,
+        date_debut,date_fin
+        ) VALUES ($1, $2, $3, $4, $5, $6)
+        "#,
+        "0000-0000-0000-0000",
+        &payload.email,
+        &payload.phone,
+        &payload.name,
+        &date_start,
+        &date_end,
+    )
+    .execute(&mut *tx)
+    .await
+    .map_err(AppError::SqlxError)?;
 
     // 7. Valider la transaction
     tx.commit().await.map_err(AppError::SqlxError)?;
@@ -319,21 +342,89 @@ pub async fn create_compagny(
             "statut": true,
             "token":token,
             "message": "Compte enregistré avec succès",
-            "depot_id":&depot_id,
-            "compagny_id":&compagny_id,
-            "uniteId":&unite_id,
-            "marqueId":&marque_id,
-            "sousFamilleId":&sous_fami_id,
-            "boutiqueId":&boutiq_id,
-            "userId":&user.id,
-            "caisse_id":&caisse_id,
-            "modePaimentID":mode_ids[0],
-            "userName":&user.name,
-            "userRoleId":&user.role_id,
-            "email":&payload.email,
+            "user": user,
+            "default_ids": get_default_datas(&pool).await?,
+            "sub_date_start":&date_start,
+            "sub_date_end":&date_end,
+            "license_key":"0000-0000-0000-0000",
+            "privileges": get_privileges(&pool, user.role_id).await?,
         })),
     ))
 }
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct Abonnement {
+    pub compagny_id: String,
+    pub key_licence: String,
+    pub date_start: NaiveDate,
+    pub date_end: NaiveDate,
+}
+#[derive(Debug, Serialize, Deserialize, FromRow)]
+pub struct AbonnementResponse {
+    pub key_licence: String,
+    pub date_debut: DateTime<Utc>,
+    pub date_fin: DateTime<Utc>,
+}
+pub async fn store_abonnement(
+    State(pool): State<PgPool>,
+    Json(payload): Json<Abonnement>,
+) -> Result<impl IntoResponse, AppError> {
+    let compagny = sqlx::query_as::<_, Compagny>("SELECT * FROM compagnies WHERE id = $1")
+        .bind(&payload.compagny_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    sqlx::query!(
+        r#"
+        INSERT INTO abonnements ( 
+        key_licence,email_compagny,phone_compagny,nom_compagny,
+        date_debut,date_fin
+        ) VALUES ($1, $2, $3, $4, $5::date, $6::date)
+        "#,
+        payload.key_licence,
+        compagny.address_mail.clone(),
+        compagny.phone_mobil,
+        compagny.denomination,
+        payload.date_start,
+        payload.date_end,
+    )
+    .execute(&pool)
+    .await
+    .map_err(AppError::SqlxError)?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(json!({
+            "statut": true,
+            "message": "Abonnement enregistré avec succès",
+        })),
+    ))
+}
+pub async fn get_abonnement_valide(
+    State(pool): State<PgPool>,
+) -> Result<impl IntoResponse, AppError> {
+    let abonnement = sqlx::query_as::<_, AbonnementResponse>(
+        "SELECT * FROM abonnements WHERE date_fin> NOW() ORDER BY date_fin DESC LIMIT 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| AppError::Internal(e.to_string()))?;
+    match abonnement {
+        Some(data) => Ok((
+            StatusCode::OK,
+            Json(json!({
+             "abonnement": data,
+            })),
+        )),
+        None => Ok((
+            StatusCode::NOT_FOUND,
+            Json(json!({
+             "message": "Aucun abonnement valide trouvé",
+            })),
+        )),
+    }
+}
+
 pub async fn get_compagny(
     State(pool): State<PgPool>,
     Path(compagny_id): Path<String>,
@@ -345,12 +436,11 @@ pub async fn get_compagny(
         .map_err(|e| AppError::Internal(e.to_string()))?;
     Ok((StatusCode::OK, Json(compagnies)))
 }
-// 
+//
 pub async fn update_compagny(
     State(pool): State<PgPool>,
     Json(payload): Json<Compagny>,
 ) -> Result<impl IntoResponse, AppError> {
-
     let query_comp = "
         UPDATE compagnies SET 
             denomination = $2,
@@ -391,7 +481,7 @@ pub async fn update_compagny(
         .bind(&payload.address_phy)
         .execute(&pool)
         .await
-        .map_err(AppError::SqlxError)?;   // OK
+        .map_err(AppError::SqlxError)?; // OK
 
     Ok((
         StatusCode::OK,

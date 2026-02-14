@@ -7,7 +7,7 @@ use axum::{
 use serde_json::json;
 use sqlx::{PgPool, Postgres, QueryBuilder, query};
 
-use crate::{errors::AppError, models::{caisse::{Caisse, MvtCaissePlayload, MvtCaisseShow, PaginateCaisse}, helper_model::PaginateReglement}};
+use crate::{errors::AppError, models::{caisse::{Caisse, MvtCaissePlayload, MvtCaisseShow, PaginateCaisse}}};
 
 pub async fn caisse_get(State(pool): State<PgPool>) -> Result<impl IntoResponse, AppError> {
     let caisses = sqlx::query_as::<_, Caisse>(

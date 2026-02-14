@@ -9,8 +9,8 @@ use axum::{Json, extract::State};
 use calamine::Table;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::PgPool;
 use sqlx::prelude::FromRow;
+use sqlx::{PgPool, pool};
 use uuid::Uuid;
 
 use crate::models::user::UserLogin;
@@ -75,7 +75,7 @@ pub async fn register(
     Ok(Json(user))
 }
 
-#[derive(Deserialize,Debug)]
+#[derive(Deserialize, Debug)]
 pub struct LoginInput {
     pub name: String,
     pub password: String,
@@ -99,49 +99,55 @@ pub async fn login(
         .is_ok()
     {
         let token = generate_token(&user.id, "supersecretkeychangeit");
-        let privileges: Vec<i32> = sqlx::query_scalar(
-            "SELECT permission_id FROM permission_role
-             WHERE role_id = $1",
-        )
-        .bind(&user.role_id)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| AppError::SqlxError(e))?;
-
-        let tables_defauts = [
-            "unites",
-            "depots",
-            "marques",
-            "sous_familles",
-            "caisses",
-            "mode_paiements",
-            "compagnies",
-            "boutiques",
-        ];
-        let mut default_ids: HashMap<String, String> = HashMap::new();
-        for tab in tables_defauts  {
-            let ids: String = sqlx::query_scalar(
-                format!("SELECT id FROM {} LIMIT 1", tab).as_str(),
-            )
-            .fetch_one(&pool)
-            .await
-            .map_err(AppError::SqlxError)?;
-            default_ids.insert(tab.to_string(), ids);
-            
-        }
         Ok((
             StatusCode::OK,
             Json(json!({
                 "token": token,
                 "user": user,
-                "privileges": privileges,
-                "default_ids": default_ids,
+                "privileges": get_privileges(&pool, user.role_id).await?,
+                "default_ids": get_default_datas(&pool).await?,
             })),
         ))
     } else {
-        println!("Invalid password for user: {}", payload.name);
-        Ok((StatusCode::UNAUTHORIZED, Json(json!({"error": "Invalid credentials"}))))
+        Ok((
+            StatusCode::UNAUTHORIZED,
+            Json(json!({"error": "Invalid credentials"})),
+        ))
     }
+}
+
+pub async fn get_privileges(pool: &PgPool, role_id: i32) -> Result<Vec<i32>, AppError> {
+    let privileges: Vec<i32> = sqlx::query_scalar(
+        "SELECT permission_id FROM permission_role
+         WHERE role_id = $1",
+    )
+    .bind(role_id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| AppError::SqlxError(e))?;
+
+    Ok(privileges)
+}
+pub async fn get_default_datas(pool: &PgPool) -> Result<HashMap<String, String>, AppError> {
+    let tables_defauts = [
+        "unites",
+        "depots",
+        "marques",
+        "sous_familles",
+        "caisses",
+        "mode_paiements",
+        "compagnies",
+        "boutiques",
+    ];
+    let mut default_ids: HashMap<String, String> = HashMap::new();
+    for tab in tables_defauts {
+        let ids: String = sqlx::query_scalar(format!("SELECT id FROM {} LIMIT 1", tab).as_str())
+            .fetch_one(pool)
+            .await
+            .map_err(AppError::SqlxError)?;
+        default_ids.insert(tab.to_string(), ids);
+    }
+    Ok(default_ids)
 }
 
 #[derive(Serialize)]

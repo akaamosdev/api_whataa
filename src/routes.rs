@@ -1,3 +1,4 @@
+use crate::handlers::compagny_handler::{get_abonnement_valide, store_abonnement};
 use crate::handlers::etat_article::{mvt_stock_article, stock_alert, stock_avaible};
 use crate::handlers::user_handler::{all_users, role_users, store_new_user};
 use crate::handlers::{
@@ -129,6 +130,7 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/etat/article/stock_alert", get(stock_alert))
         .route("/etat/article/mouvement_stock", get(mvt_stock_article))//famille handlers
         .route("/sous-famille/by/{famille_id}", get(sous_familles_by_famille))
-
+        .route("/store/key-licence", post(store_abonnement))
+        .route("/validate/abonnement", post(get_abonnement_valide))
         .with_state(pool)
 }

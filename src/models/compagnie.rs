@@ -25,4 +25,3 @@ pub struct Compagny{
     pub sale_negative: Option<i32>,
     pub synchronise: Option<bool>,
 }
-

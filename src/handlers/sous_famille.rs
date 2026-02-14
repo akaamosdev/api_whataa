@@ -21,14 +21,6 @@ pub struct SousFamille {
     pub name: String,
     pub famille_id: String,
 }
-#[derive(Deserialize, Serialize, FromRow)]
-pub struct SousFamilleShow {
-    pub id: String,
-    pub code: String,
-    pub name: String,
-    pub famille_id: String,
-    pub famille : String,
-}
 //
 #[derive(Deserialize, Serialize, FromRow)]
 pub struct SousFamilleByFamille {

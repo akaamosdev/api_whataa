@@ -1,6 +1,6 @@
 use axum::{Json, extract::{Query, State}, http::StatusCode, response::IntoResponse};
 use serde_json::json;
-use sqlx::{PgPool, Postgres, QueryBuilder, query};
+use sqlx::{PgPool, Postgres, QueryBuilder};
 
 use crate::{errors::AppError, models::depense::{Depense, DepensePayload, PaginateDepense}};
 

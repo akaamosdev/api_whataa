@@ -10,10 +10,8 @@ use crate::errors::AppError;
 pub struct SendDataDto {
     pub user_id: String,
     pub table: String,
-    // Expect datas to be a JSON array in the request body
     pub datas: Vec<Value>,
 }
-
 // Whitelist of tables allowed to be synced. This prevents SQL injection via table names.
 const ALLOWED_TABLES: &[&str] = &[
     "articles", "users", "roles", "boutiques", "depots", "tiers", "documents",
