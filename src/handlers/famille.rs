@@ -111,18 +111,3 @@ pub async fn delete_famille(
         })),
     ))
 }
-// sous famille handlers by famille
-pub async fn sous_familles_by_famille(
-    State(pool): State<PgPool>,
-    Path(famille_id): Path<String>,
-) -> Result<impl IntoResponse, AppError> {
-    let sous_familles: Vec<Famille> = sqlx::query_as(
-        "SELECT id, code, name FROM sous_familles WHERE famille_id = $1 ORDER BY created_at DESC",
-    )
-    .bind(&famille_id)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| AppError::Internal(e.to_string()))?;       
-
-    Ok((StatusCode::OK, Json(sous_familles)))
-}

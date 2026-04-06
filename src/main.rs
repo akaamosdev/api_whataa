@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 mod config;
 mod db;
 mod errors;
@@ -6,74 +8,45 @@ mod auth;
 mod handlers;
 mod models;
 mod routes;
-mod service;
 
 use crate::{config::Config, db::init_db, routes::create_router};
-use tracing_subscriber;
 use std::net::SocketAddr;
-use std::env;
-use windows_service::service::ServiceMainFunction;
+use tracing::{info, error};
+use tracing_appender::rolling;
+use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-#[allow(warnings)]
 #[tokio::main]
 async fn main() {
-    let args: Vec<String> = env::args().collect();
 
-    // Check for service control arguments
-    if args.len() > 1 {
-        match args[1].as_str() {
-            "install" => {
-                match service::install_service() {
-                    Ok(_) => std::process::exit(0),
-                    Err(e) => {
-                        eprintln!("Failed to install service: {}", e);
-                        std::process::exit(1);
-                    }
-                }
-            }
-            "uninstall" => {
-                match service::uninstall_service() {
-                    Ok(_) => std::process::exit(0),
-                    Err(e) => {
-                        eprintln!("Failed to uninstall service: {}", e);
-                        std::process::exit(1);
-                    }
-                }
-            }
-            "--service" => {
-                // Run as Windows service
-                let dispatch_table = [
-                    windows_service::service::ServiceTableEntry {
-                        name: std::ffi::OsStr::new("MyRustApp"),
-                        service_main: Some(service::ffi_service_main),
-                    },
-                    windows_service::service::ServiceTableEntry {
-                        name: std::ffi::OsStr::new(""),
-                        service_main: None,
-                    },
-                ];
+    // 📁 Création du dossier logs
+    let log_dir = "C:\\Whataa\\logs";
+    std::fs::create_dir_all(log_dir).ok();
 
-                if let Err(e) = windows_service::service::start_service_control_dispatcher(&dispatch_table) {
-                    eprintln!("Failed to start service: {}", e);
-                }
-                std::process::exit(0);
-            }
-            _ => {}
-        }
-    }
+    // 📝 Logger fichier
+    let file_appender = rolling::daily(log_dir, "whataa.log");
+    let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
-    // Run normally (not as service)
-    tracing_subscriber::fmt::init();
+    tracing_subscriber::registry()
+        .with(fmt::Layer::default().with_writer(non_blocking))
+        .init();
+
+    info!("🚀 Démarrage API Whataa...");
 
     let config = Config::from_env();
+
     let pool = init_db(&config.database_url).await;
+    info!("✅ Connexion base de données OK");
+
 
     let app = create_router(pool);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 8000));
-    println!("🚀 API disponible sur http://{}", addr);
+    info!("🌍 API disponible sur http://{}", addr);
 
-    axum::serve(tokio::net::TcpListener::bind(addr).await.unwrap(), app)
-        .await
-        .unwrap();
+    if let Err(e) = axum::serve(
+        tokio::net::TcpListener::bind(addr).await.unwrap(),
+        app,
+    ).await {
+        error!("❌ Erreur serveur: {:?}", e);
+    }
 }
