@@ -15,6 +15,7 @@ use calamine::{DataType,  Reader, };
 use std::{ io::Cursor, };
 use uuid::Uuid;
 
+use std::path::PathBuf;
 use crate::{
     errors::AppError,
     models::{articles::Article, ligne_document::LigneDocumentDto},
@@ -57,7 +58,12 @@ pub async fn get_last_counts(
     ))
 }
 
-//store image
+
+pub fn uploads_dir() -> PathBuf {
+    let base = std::env::var("PROGRAMDATA").unwrap_or_else(|_| "C:\\ProgramData".to_string());
+    PathBuf::from(base).join("WReseau").join("uploads")
+}
+
 pub async fn upload_file(
     State(pool): State<PgPool>,
     mut multipart: Multipart,
@@ -66,47 +72,48 @@ pub async fn upload_file(
     let mut table = String::new();
     let mut url = String::new();
 
-    while let Some(field) = multipart.next_field().await.unwrap() {
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::Internal(e.to_string()))?
+    {
         match field.name() {
-            Some("id") => {
-                id = field.text().await.unwrap();
-            }
-            Some("table") => {
-                table = field.text().await.unwrap();
-            }
+            Some("id") => id = field.text().await.map_err(|e| AppError::Internal(e.to_string()))?,
+            Some("table") => table = field.text().await.map_err(|e| AppError::Internal(e.to_string()))?,
             Some("upload_image") => {
-                // let file_name = field.file_name().unwrap_or("upload.png").to_string();
-                let data = field.bytes().await.unwrap();
-                let id_img = Uuid::new_v4().to_string() ;
-                tokio::fs::write(format!("./uploads/{}image.png", id_img), &data)
-                    .await
-                    .unwrap();
+                let data = field.bytes().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
-                url = format!("/uploads/{}image.png", id_img);
+                let dir = uploads_dir();
+                tokio::fs::create_dir_all(&dir)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("create uploads dir failed: {e}")))?;
+
+                let file_name = format!("{}.png", Uuid::new_v4());
+                let path = dir.join(&file_name);
+
+                tokio::fs::write(&path, &data)
+                    .await
+                    .map_err(|e| AppError::Internal(format!("write upload failed: {e}")))?;
+
+                // URL “logique” à servir (à aligner avec ton static serving)
+                url = format!("/uploads/{}", file_name);
             }
             _ => {}
         }
     }
+
     let column = if table == "articles" { "image" } else { "logo" };
     let query = format!("UPDATE {} SET {} = $1 WHERE id = $2", table, column);
 
-    let rows_affected = sqlx::query(&query)
+    sqlx::query(&query)
         .bind(&url)
         .bind(&id)
         .execute(&pool)
         .await
-        .map_err(|e| AppError::Internal(e.to_string()))?
-        .rows_affected();
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    Ok((
-        StatusCode::OK,
-        Json(json!({
-            "statut": true,
-            "message": "image enregistrée jour avec succès"
-        })),
-    ))
+    Ok((StatusCode::OK, Json(json!({ "statut": true, "message": "image enregistrée avec succès" }))))
 }
-
 pub async fn import_articles(
     State(pool): State<PgPool>,
     mut multipart: Multipart,

@@ -1,5 +1,6 @@
 use crate::handlers::compagny_handler::{get_abonnement_valide, store_abonnement};
 use crate::handlers::etat_article::{mvt_stock_article, stock_alert, stock_avaible};
+use crate::handlers::helpers::uploads_dir;
 use crate::handlers::user_handler::{all_users, role_users, store_new_user};
 use crate::handlers::{
     auth::{ get_data_default, login, register},
@@ -92,7 +93,7 @@ pub fn create_router(pool: PgPool) -> Router {
         .route("/import_articles", post(import_articles))
         // .route("/solde_initial", post(store_solde_initial))
         .route("/default/data", get(get_data_default))
-        .nest_service("/uploads", ServeDir::new("./uploads"))
+        .nest_service("/uploads", ServeDir::new(uploads_dir()))
         .nest("/familles", famille_routes)
         .nest("/sous_familles", sous_famille_routes)
         .nest("/articles", article_routes)

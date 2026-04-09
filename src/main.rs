@@ -15,16 +15,17 @@ use tracing::{error, info};
 use tracing_appender::rolling;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
+
 #[tokio::main]
 async fn main() {
     // logs -> fichier
     let log_dir = "./logs";
     std::fs::create_dir_all(log_dir).ok();
 
+
     let file_appender = rolling::daily(log_dir, "whataa.log");
     let (non_blocking, _guard) = tracing_appender::non_blocking(file_appender);
 
-    // IMPORTANT: désactiver ANSI (évite les [0m dans les fichiers)
     tracing_subscriber::registry()
         .with(fmt::Layer::default().with_ansi(false).with_writer(non_blocking))
         .init();
